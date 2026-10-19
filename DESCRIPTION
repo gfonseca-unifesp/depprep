@@ -1,0 +1,32 @@
+Package: depprep
+Title: Dependence-Aware Preprocessing for Multivariate Exploratory
+    Analysis
+Version: 0.0.0.9000
+Authors@R: 
+    person("Gustavo", "Fonseca", , "gfonseca@unifesp.br", role = c("aut", "cre"))
+Description: Preprocessing that corrects spatial, temporal and
+    spatio-temporal autocorrelation in data sets with many variables of
+    different dependence regimes, while preserving the correlations
+    between variables. Variables with similar dependence signatures share
+    a common basis, and the corrected matrix is intended for PCA, MDS,
+    k-means and self-organizing maps.
+License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
+    license
+Config/roxygen2/version: 8.1.1
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Suggests: 
+    ggplot2,
+    quarto,
+    sf,
+    SpatialBSS,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Imports: 
+    adespatial,
+    cluster,
+    gstat,
+    kohonen,
+    mclust,
+    spdep,
+    vegan

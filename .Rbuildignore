@@ -1,0 +1,13 @@
+^CLAUDE\.md$
+^\.claude$
+^analysis$
+^results$
+^interno$
+^docs$
+^data$
+^renv$
+^renv\.lock$
+^\.gitattributes$
+\.gitkeep$
+^_dependencies\.R$
+^\.Rprofile$
