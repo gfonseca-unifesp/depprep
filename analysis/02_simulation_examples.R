@@ -208,6 +208,7 @@ for (structure_type in c("identity", "blocks")) {
   }
 }
 assoc <- do.call(rbind, assoc)
+assoc$truth <- factor(assoc$truth, c("null structure", "block structure"))  # simplest case first
 assoc$matrix <- factor(assoc$matrix, c("R_true (imposed)", "Raw correlation of X", "Correlation of the true residuals"))
 write.csv(aggregate(abs(r) ~ matrix + truth, data = assoc[assoc$i != assoc$j, ], FUN = mean),
           file.path(out_dir, "association.csv"), row.names = FALSE)
@@ -221,6 +222,44 @@ p <- ggplot(assoc, aes(i, j, fill = r)) + geom_raster() +
        subtitle = "Groups (lines): long_a, long_b (shares long_a's field), short, aniso, none. n = 400, large-scale share 0.6",
        x = "variable", y = "variable")
 save_fig(p, "sim_apparent_association.png", 10, 6.5)
+
+# Simpler views of the same matrices: (a) mean correlation between groups, written in
+# each cell; (b) mean correlation by type of pair of variables.
+vg <- attr(ag, "var_group"); gnames <- names(ag)
+assoc$gi <- factor(vg[assoc$i], gnames); assoc$gj <- factor(vg[assoc$j], gnames)
+off <- assoc[assoc$i != assoc$j, ]
+blk <- aggregate(r ~ matrix + truth + gi + gj, data = off, FUN = mean)
+p <- ggplot(blk, aes(gi, gj, fill = r)) + geom_tile(colour = "white", linewidth = 0.8) +
+  geom_text(aes(label = sprintf("%.2f", r)), size = 3.2) +
+  facet_grid(truth ~ matrix) + coord_equal() + scale_y_discrete(limits = rev(gnames)) +
+  scale_fill_gradient(low = "white", high = "#0d6b72", limits = c(0, 1), oob = scales::squish,
+                      name = "mean\ncorrelation") +
+  labs(title = "Apparent association, summarised by group",
+       subtitle = "Each cell: mean correlation between the variables of two groups (diagonal: different variables of the same group)",
+       x = NULL, y = NULL) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+save_fig(p, "sim_apparent_association_groups.png", 10, 6.8)
+
+g1 <- as.character(off$gi); g2 <- as.character(off$gj)
+off$pair <- ifelse(g1 == g2 & g1 == "none", "5. within the no-dependence group",
+            ifelse(g1 == "none" | g2 == "none", "4. no-dependence group x others",
+            ifelse(g1 == g2, "1. same group (same field)",
+            ifelse(sort(c("long_a", "long_b"))[1] %in% c(g1, g2) & paste(pmin(g1, g2), pmax(g1, g2)) == "long_a long_b",
+                   "2. different groups sharing a field", "3. different groups, independent fields"))))
+pairs <- aggregate(r ~ pair + matrix + truth, data = off, FUN = mean)
+write.csv(pairs, file.path(out_dir, "association_pairs.csv"), row.names = FALSE)
+p <- ggplot(pairs, aes(pair, r, fill = matrix)) +
+  geom_col(position = position_dodge(0.8), width = 0.75) +
+  geom_text(aes(label = sprintf("%.2f", r)), position = position_dodge(0.8), vjust = -0.4, size = 2.8) +
+  facet_wrap(~ truth, ncol = 1) +
+  scale_fill_manual(values = c("#586972", "#9a5806", "#0d6b72"), name = NULL) +
+  scale_x_discrete(labels = function(x) sub("^[0-9]\\. ", "", x)) +
+  coord_cartesian(ylim = c(-0.05, 1)) +
+  labs(title = "Mean correlation by type of pair of variables",
+       subtitle = "Grey: imposed truth (R_true). Brown: raw data. Blue: true residuals. Raw above truth = apparent association",
+       x = NULL, y = "mean correlation") +
+  theme(legend.position = "bottom", axis.text.x = element_text(size = 8))
+save_fig(p, "sim_apparent_association_pairs.png", 10, 6.5)
 
 # --- 6. Classes ---------------------------------------------------------------------------
 cg <- sim_groups(sim_group("f", 2, "exponential", range = 0.25))
