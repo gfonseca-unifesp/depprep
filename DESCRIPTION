@@ -27,5 +27,8 @@ Imports:
     gstat,
     kohonen,
     mclust,
+    parallel,
     spdep,
+    stats,
+    utils,
     vegan

@@ -1,0 +1,299 @@
+# Building blocks shared by sim_spatial(), sim_temporal() and sim_spatiotemporal().
+#
+# Generator model (docs/protocol.md, section 3): for variable j in group g,
+#   x_j = sqrt(s_g) * L_g + sqrt(1 - s_g) * e_j + class effect,
+# where L_g is the standardised large-scale component of the group, e has
+# correlation R_true across variables and is independent across observations,
+# and s_g is the share of variance that comes from the large scale.
+
+# Independent random streams, one per component, so that changing one component
+# (for example the residuals) leaves the others unchanged.
+.streams <- c(coords = 1L, large = 2L, residual = 3L, classes = 4L)
+
+# Evaluate `expr` with an L'Ecuyer-CMRG stream derived from `seed` and restore the
+# caller's random number generator afterwards.
+.with_stream <- function(seed, stream, expr) {
+  env <- globalenv()
+  old_kind <- RNGkind()
+  had_seed <- exists(".Random.seed", envir = env, inherits = FALSE)
+  if (had_seed) old_seed <- get(".Random.seed", envir = env)
+  on.exit({
+    suppressWarnings(RNGkind(old_kind[1], old_kind[2], old_kind[3]))
+    if (had_seed) {
+      assign(".Random.seed", old_seed, envir = env)
+    } else if (exists(".Random.seed", envir = env, inherits = FALSE)) {
+      rm(".Random.seed", envir = env)
+    }
+  }, add = TRUE)
+  RNGkind("L'Ecuyer-CMRG")
+  set.seed(seed)
+  s <- get(".Random.seed", envir = env)
+  for (i in seq_len(stream)) s <- parallel::nextRNGStream(s)
+  assign(".Random.seed", s, envir = env)
+  force(expr)
+}
+
+# Exponential correlation with practical range `range` (correlation 0.05 at `range`).
+.exp_cor <- function(h, range) exp(-3 * h / range)
+
+# Geometric anisotropy: rotate so that the major axis (at `angle` degrees from the
+# x axis) lies on x, then stretch the minor axis by `ratio`. The practical range is
+# `range` along the major axis and `range / ratio` along the minor axis.
+.aniso_coords <- function(coords, ratio = 1, angle = 0) {
+  th <- angle * pi / 180
+  rot <- matrix(c(cos(th), sin(th), -sin(th), cos(th)), 2)
+  xy <- as.matrix(coords) %*% rot
+  xy[, 2] <- xy[, 2] * ratio
+  xy
+}
+
+# Gaussian random field(s) with exponential covariance, by Cholesky factorisation.
+# Returns an n x n_sim matrix with unit variance.
+.grf_chol <- function(coords, range, ratio = 1, angle = 0, n_sim = 1) {
+  xy <- .aniso_coords(coords, ratio, angle)
+  cmat <- .exp_cor(as.matrix(stats::dist(xy)), range)
+  u <- chol(cmat + diag(1e-10, nrow(cmat)))
+  t(u) %*% matrix(stats::rnorm(nrow(cmat) * n_sim), nrow(cmat))
+}
+
+# Random Fourier features for the exponential covariance. The spectral measure of
+# exp(-|h| / a) in two dimensions is a bivariate Cauchy (multivariate t with one
+# degree of freedom) with scale 1 / a. Returns a function that evaluates one field
+# realisation at any set of coordinates, which is what a moving pattern needs.
+.rff_sampler <- function(range, ratio = 1, angle = 0, n_features = 1000) {
+  a <- range / 3
+  w <- stats::rchisq(n_features, df = 1)
+  z <- matrix(stats::rnorm(2 * n_features), n_features)
+  omega <- z / (a * sqrt(w))
+  b <- stats::runif(n_features, 0, 2 * pi)
+  function(coords) {
+    xy <- .aniso_coords(coords, ratio, angle)
+    phase <- sweep(xy %*% t(omega), 2, b, "+")
+    sqrt(2 / n_features) * rowSums(cos(phase))
+  }
+}
+
+# Stationary AR(1) series with unit variance; returns an n_times x n_series matrix.
+.ar1 <- function(n_times, phi, n_series = 1) {
+  stopifnot(abs(phi) < 1)
+  eps <- matrix(stats::rnorm(n_times * n_series), n_times)
+  x <- eps
+  if (n_times > 1) {
+    for (t in 2:n_times) x[t, ] <- phi * x[t - 1, ] + sqrt(1 - phi^2) * eps[t, ]
+  }
+  x
+}
+
+# Harmonic with unit variance.
+.seasonal <- function(n_times, period, phase = 0) {
+  sqrt(2) * sin(2 * pi * seq_len(n_times) / period + phase)
+}
+
+# Linear trend with a jump at `shift_at` (fraction of the series), standardised.
+.trend_shift <- function(n_times, slope = 1, jump = 1, shift_at = 0.5) {
+  t <- seq_len(n_times)
+  f <- slope * t / n_times + jump * (t > shift_at * n_times)
+  as.vector(scale(f))
+}
+
+# Residual components: n_obs x p, rows independent, columns with correlation R.
+.residual_mvn <- function(n_obs, R) {
+  u <- tryCatch(chol(R), error = function(e) {
+    stop("`R_true` must be a positive definite correlation matrix.", call. = FALSE)
+  })
+  matrix(stats::rnorm(n_obs * ncol(R)), n_obs) %*% u
+}
+
+# Contiguous classes: k spatial regions (k-means of the coordinates) or k blocks of
+# consecutive times.
+.contiguous_classes <- function(k, coords = NULL, n_times = NULL) {
+  if (!is.null(coords)) return(stats::kmeans(as.matrix(coords), centers = k, nstart = 10)$cluster)
+  as.integer(ceiling(seq_len(n_times) * k / n_times))
+}
+
+# Balanced random classes.
+.random_classes <- function(k, n_obs) sample(rep_len(seq_len(k), n_obs))
+
+# Class means: one row per class, non-zero only in `vars`; centred over classes.
+.class_effects <- function(k, p, effect, vars) {
+  mu <- matrix(0, k, p)
+  if (effect != 0 && length(vars)) {
+    m <- matrix(stats::rnorm(k * length(vars)) * effect, k)
+    mu[, vars] <- sweep(m, 2, colMeans(m))
+  }
+  mu
+}
+
+#' Define one dependence group for the simulators
+#'
+#' A group is a set of variables that share the same large-scale component (the
+#' same dependence regime). Regime parameters are passed in `...` and depend on the
+#' simulator: see [sim_spatial()], [sim_temporal()] and [sim_spatiotemporal()].
+#'
+#' @param name Group name (used to name the variables).
+#' @param n_vars Number of variables in the group.
+#' @param regime Regime name, for example `"exponential"`, `"ar1"` or `"none"`.
+#' @param ... Regime parameters, for example `range = 0.25` or `phi = 0.9`.
+#' @param large_scale_share Share of each variable's variance that comes from the
+#'   large-scale component (between 0 and 1). Forced to 0 for regime `"none"`.
+#' @param shared_with Name of another group whose large-scale component this group
+#'   reuses. The regime of this group is then ignored.
+#' @return An object of class `depprep_group`.
+#' @examples
+#' sim_group("long", 5, "exponential", range = 0.5)
+#' @export
+sim_group <- function(name, n_vars, regime, ..., large_scale_share = 0.6, shared_with = NULL) {
+  stopifnot(is.character(name), length(name) == 1, n_vars >= 1, n_vars == round(n_vars),
+            is.character(regime), length(regime) == 1,
+            large_scale_share >= 0, large_scale_share <= 1)
+  if (regime == "none") large_scale_share <- 0
+  structure(list(name = name, n_vars = as.integer(n_vars), regime = regime,
+                 params = list(...), large_scale_share = large_scale_share,
+                 shared_with = shared_with),
+            class = "depprep_group")
+}
+
+#' Combine dependence groups
+#'
+#' @param ... Groups created with [sim_group()].
+#' @return An object of class `depprep_groups`: a list of groups with the variable
+#'   names and the group of each variable as attributes.
+#' @examples
+#' g <- sim_groups(sim_group("long", 3, "exponential", range = 0.5),
+#'                 sim_group("none", 2, "none"))
+#' attr(g, "var_group")
+#' @export
+sim_groups <- function(...) {
+  groups <- list(...)
+  if (!length(groups) || !all(vapply(groups, inherits, logical(1), "depprep_group"))) {
+    stop("Pass one or more groups created with sim_group().", call. = FALSE)
+  }
+  names(groups) <- vapply(groups, `[[`, "", "name")
+  if (anyDuplicated(names(groups))) stop("Group names must be unique.", call. = FALSE)
+  for (g in groups) {
+    if (!is.null(g$shared_with)) {
+      src <- groups[[g$shared_with]]
+      if (is.null(src)) stop("Group '", g$name, "' shares with unknown group '", g$shared_with, "'.", call. = FALSE)
+      if (!is.null(src$shared_with)) stop("Group '", g$shared_with, "' already shares another group's field.", call. = FALSE)
+      if (src$regime == "none") stop("Group '", g$name, "' cannot share the field of a group without dependence.", call. = FALSE)
+    }
+  }
+  var_group <- rep(names(groups), vapply(groups, `[[`, 0L, "n_vars"))
+  var_names <- unlist(lapply(groups, function(g) paste0(g$name, "_", seq_len(g$n_vars))), use.names = FALSE)
+  structure(groups, class = "depprep_groups", var_group = var_group, var_names = var_names)
+}
+
+#' Correlation matrix of the residual components
+#'
+#' @param groups Groups created with [sim_groups()].
+#' @param type `"identity"` (no association between residual components, the null
+#'   structure) or `"blocks"` (constant correlation within and between groups).
+#' @param within Correlation between variables of the same group (`"blocks"`).
+#' @param between Correlation between variables of different groups (`"blocks"`).
+#' @return A p x p positive definite correlation matrix with variable names.
+#' @examples
+#' g <- sim_groups(sim_group("a", 2, "none"), sim_group("b", 2, "none"))
+#' make_R_true(g, "blocks", within = 0.5, between = 0.2)
+#' @export
+make_R_true <- function(groups, type = c("identity", "blocks"), within = 0.5, between = 0.2) {
+  stopifnot(inherits(groups, "depprep_groups"))
+  type <- match.arg(type)
+  vg <- attr(groups, "var_group")
+  p <- length(vg)
+  r <- diag(p)
+  if (type == "blocks") {
+    r <- ifelse(outer(vg, vg, "=="), within, between)
+    diag(r) <- 1
+  }
+  if (min(eigen(r, symmetric = TRUE, only.values = TRUE)$values) <= 1e-8) {
+    stop("This combination of `within` and `between` is not positive definite.", call. = FALSE)
+  }
+  dimnames(r) <- list(attr(groups, "var_names"), attr(groups, "var_names"))
+  r
+}
+
+.check_R <- function(R_true, groups) {
+  p <- length(attr(groups, "var_group"))
+  if (is.null(R_true)) R_true <- diag(p)
+  R_true <- as.matrix(R_true)
+  if (!all(dim(R_true) == p)) stop("`R_true` must be ", p, " x ", p, " (one row per variable).", call. = FALSE)
+  if (max(abs(R_true - t(R_true))) > 1e-10 || max(abs(diag(R_true) - 1)) > 1e-10) {
+    stop("`R_true` must be a symmetric correlation matrix.", call. = FALSE)
+  }
+  dimnames(R_true) <- list(attr(groups, "var_names"), attr(groups, "var_names"))
+  R_true
+}
+
+.check_regime <- function(groups, allowed) {
+  for (g in groups) {
+    if (is.null(g$shared_with) && !g$regime %in% allowed) {
+      stop("Regime '", g$regime, "' of group '", g$name, "' is not available here. Use one of: ",
+           paste(allowed, collapse = ", "), ".", call. = FALSE)
+    }
+  }
+}
+
+# Spread each group's large-scale component (one column per group) over its
+# variables, following `shared_with`.
+.large_by_variable <- function(groups, fields, n_obs) {
+  cols <- lapply(groups, function(g) {
+    src <- if (is.null(g$shared_with)) g$name else g$shared_with
+    f <- fields[[src]]
+    if (is.null(f)) f <- numeric(n_obs)
+    matrix(f, n_obs, g$n_vars)
+  })
+  do.call(cbind, cols)
+}
+
+# Class labels and class effects. `spec` is NULL or a list with k, type
+# ("random" or "contiguous"), effect and vars (indices of affected variables).
+.make_classes <- function(spec, n_obs, p, seed, coords = NULL, n_times = NULL, expand = 1L) {
+  if (is.null(spec)) return(list(labels = rep(1L, n_obs), effect = matrix(0, n_obs, p), spec = NULL))
+  spec <- utils::modifyList(list(k = 3L, type = "random", effect = 1, vars = seq_len(p)), spec)
+  stopifnot(spec$type %in% c("random", "contiguous"))
+  .with_stream(seed, .streams[["classes"]], {
+    # contiguous classes of sites are repeated at every time (`expand` times)
+    labels <- if (spec$type == "contiguous") {
+      rep(.contiguous_classes(spec$k, coords = coords, n_times = n_times), times = expand)
+    } else {
+      .random_classes(spec$k, n_obs)
+    }
+    mu <- .class_effects(spec$k, p, spec$effect, spec$vars)
+    list(labels = as.integer(labels), effect = mu[labels, , drop = FALSE], spec = spec)
+  })
+}
+
+# Assemble X and the simulation object.
+.assemble <- function(family, groups, large, R_true, classes, seed, extra, call) {
+  share <- rep(vapply(groups, `[[`, 0, "large_scale_share"), vapply(groups, `[[`, 0L, "n_vars"))
+  n_obs <- nrow(large)
+  residual <- .with_stream(seed, .streams[["residual"]], .residual_mvn(n_obs, R_true))
+  x <- sweep(large, 2, sqrt(share), "*") + sweep(residual, 2, sqrt(1 - share), "*") + classes$effect
+  vn <- attr(groups, "var_names")
+  colnames(x) <- colnames(large) <- colnames(residual) <- colnames(classes$effect) <- vn
+  structure(c(list(
+    family = family,
+    X = x,
+    group = stats::setNames(attr(groups, "var_group"), vn),
+    components = list(large = large, residual = residual, class = classes$effect),
+    large_scale_share = stats::setNames(share, vn),
+    R_true = R_true,
+    classes = classes$labels,
+    class_spec = classes$spec,
+    groups = groups,
+    seed = seed,
+    call = call), extra), class = "depprep_sim")
+}
+
+#' @export
+print.depprep_sim <- function(x, ...) {
+  cat("<depprep simulation: ", x$family, ">\n", sep = "")
+  cat(nrow(x$X), " observations x ", ncol(x$X), " variables; seed ", x$seed, "\n", sep = "")
+  for (g in x$groups) {
+    reg <- if (is.null(g$shared_with)) g$regime else paste0("shares field of '", g$shared_with, "'")
+    par <- if (length(g$params)) paste(names(g$params), unlist(lapply(g$params, paste, collapse = "/")), sep = " = ", collapse = ", ") else ""
+    cat(sprintf("  %-12s %2d vars  %-34s %s  (large-scale share %.2f)\n",
+                g$name, g$n_vars, reg, par, g$large_scale_share))
+  }
+  invisible(x)
+}
