@@ -10,8 +10,7 @@ Description: Preprocessing that corrects spatial, temporal and
     between variables. Variables with similar dependence signatures share
     a common basis, and the corrected matrix is intended for PCA, MDS,
     k-means and self-organizing maps.
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+License: MIT + file LICENSE
 Config/roxygen2/version: 8.1.1
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

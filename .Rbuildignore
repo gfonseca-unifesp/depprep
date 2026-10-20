@@ -11,3 +11,4 @@
 \.gitkeep$
 ^_dependencies\.R$
 ^\.Rprofile$
+^LICENSE\.md$
