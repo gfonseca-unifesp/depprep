@@ -51,7 +51,7 @@ scheme <- function(title, groups_txt, shared_from = NULL) {
   p <- ggplot() +
     geom_segment(data = arrows, aes(x, y, xend = xend, yend = yend), colour = "grey55",
                  arrow = arrow(length = unit(2, "mm"))) +
-    geom_label(data = all, aes(x, y, label = label), size = 3, label.size = 0.3, hjust = 0.5,
+    geom_label(data = all, aes(x, y, label = label), size = 3, linewidth = 0.3, hjust = 0.5,
                fill = ifelse(all$id == "x", "#e0eff0", ifelse(all$id %in% c("res", "cls"), "#f8ecd9", "white"))) +
     labs(title = title, subtitle = "Large-scale component of each group (left) + residual + classes = variable") +
     xlim(-1.6, 4.6) + theme_void(base_size = 10)
