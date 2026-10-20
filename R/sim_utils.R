@@ -1,6 +1,6 @@
 # Building blocks shared by sim_spatial(), sim_temporal() and sim_spatiotemporal().
 #
-# Generator model (docs/protocol.md, section 3): for variable j in group g,
+# Generator model (simulation protocol, section 3): for variable j in group g,
 #   x_j = sqrt(s_g) * L_g + sqrt(1 - s_g) * e_j + class effect,
 # where L_g is the standardised large-scale component of the group, e has
 # correlation R_true across variables and is independent across observations,

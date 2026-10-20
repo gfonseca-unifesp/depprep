@@ -6,7 +6,7 @@ description: Updates interno/report/relatorio.qmd with the section of one stage 
 The report is the maintainer's private follow-up document and is written in Portuguese.
 It lives in interno/ (a separate private repository); never copy it into the public one.
 
-1. Read docs/protocol.md, interno/report/decisoes.md and the files in results/ for the
+1. Read interno/docs/protocol.md, interno/report/decisoes.md and the files in results/ for the
    given stage.
 2. Update ONLY that stage's section of interno/report/relatorio.qmd, following the template:
    Status, Objetivo, Definições (term + short definition + concrete example),
