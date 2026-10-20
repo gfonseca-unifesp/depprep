@@ -47,7 +47,7 @@ ocean,particulate organic carbon,MODIS-Aqua monthly,L3 mapped,4 km,anonymous ERD
 ocean,particulate inorganic carbon,MODIS-Aqua monthly,L3 mapped,4 km,anonymous ERDDAP,PFEG,erdMPICmday,pic,6,ends 2022
 ocean,sea surface temperature (day),MODIS-Aqua R2019 SQ monthly,L3 mapped,4 km,anonymous ERDDAP,PFEG,erdMH1sstdmdayR20190SQ,sstMasked,6,ends 2021 on this server
 ocean,wind (x and y components),Metop ASCAT monthly,L3 gridded,0.25 deg,anonymous ERDDAP,PFEG,erdQMwindmday_LonPM180,x_wind,1,starts 2013-09; ends 2022 on this server
-ocean,sea level anomaly,NOAA CoastWatch multi-mission altimetry daily,L3 declared by provider,0.25 deg,anonymous ERDDAP,PFEG,,,,gridded multi-mission altimetry is interpolated (L4 in Copernicus terms); coverage not measured
+ocean,sea level anomaly,NOAA CoastWatch multi-mission altimetry daily,L3 declared by provider,0.25 deg,anonymous ERDDAP,PFEG,,,,excluded (L3 rule kept 2026-10-20): gridded multi-mission altimetry is interpolated (L4 in Copernicus terms)
 ocean,sea surface salinity,SMAP RSS or JPL monthly,L3 mapped,0.25 deg (about 40 km footprint),NASA Earthdata login,PO.DAAC,,,,shows the Amazon plume; starts 2015-04
 ocean,precipitation,GPM IMERG monthly,L3,0.1 deg,NASA Earthdata login,GES DISC,,,,
 ocean,CDOM absorption (adg 443),MODIS-Aqua GIOP monthly,L3 mapped,4 km,NASA Earthdata login,OB.DAAC,,,,more reliable than chlorophyll in turbid waters
