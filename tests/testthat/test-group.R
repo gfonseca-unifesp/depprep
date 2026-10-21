@@ -8,15 +8,17 @@ spatial_case <- function(seed = 21) {
 test_that("grouping recovers the true groups and keeps the none group apart", {
   s <- spatial_case()
   sig <- diagnose_variables(s)
-  gr <- group_regimes(sig)
+  gr <- group_regimes(sig, method = "hclust")
   expect_s3_class(gr, "depprep_grouping")
   expect_gte(mclust::adjustedRandIndex(gr$group, s$group), 0.8)
   expect_true(all(gr$group[gr$type == "none"] == "none"))
   expect_true(all(gr$group_type[gr$group == "none"] == "none"))
   expect_true(all(is.na(gr$stability)))
-  gm <- group_regimes(sig, method = "mclust")
+  gm <- group_regimes(sig)                                   # default: mclust (decision D6)
+  expect_identical(attr(gm, "method"), "mclust")
   expect_gte(mclust::adjustedRandIndex(gm$group, s$group), 0.4)
-  expect_equal(attr(group_regimes(sig, n_groups = 2), "n_groups"), 2)
+  expect_true(all(gm$group[gm$type == "none"] == "none"))
+  expect_equal(attr(group_regimes(sig, method = "hclust", n_groups = 2), "n_groups"), 2)
 })
 
 test_that("grouping uses only the signatures, not the order or correlations of the variables", {
@@ -33,7 +35,8 @@ test_that("grouping uses only the signatures, not the order or correlations of t
 test_that("stability: co-association is a symmetric share and defines the stability", {
   s <- spatial_case(22)
   sig <- diagnose_variables(s, nsim = 99)
-  gr <- group_regimes(sig, data = s, B = 8, seed = 3)
+  # hclust: in spatial data mclust splits more and its stability is lower (stage 4)
+  gr <- group_regimes(sig, data = s, method = "hclust", B = 8, seed = 3)
   co <- attr(gr, "coassociation")
   expect_equal(co, t(co))
   expect_true(all(diag(co) == 1))
@@ -44,7 +47,7 @@ test_that("stability: co-association is a symmetric share and defines the stabil
   expect_equal(dep$stability[i], mean(co[i, same]))
   expect_identical(gr$ambiguous, !is.na(gr$stability) & gr$stability < 0.7)
   expect_gte(stats::median(dep$stability), 0.7)                  # clean case: stable groups
-  expect_identical(group_regimes(sig, data = s, B = 8, seed = 3), gr)
+  expect_identical(group_regimes(sig, data = s, method = "hclust", B = 8, seed = 3), gr)
   expect_error(group_regimes(sig, B = 5), "required")
 })
 

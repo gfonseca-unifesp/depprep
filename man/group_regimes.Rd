@@ -7,7 +7,7 @@
 group_regimes(
   signature,
   data = NULL,
-  method = c("hclust", "mclust"),
+  method = c("mclust", "hclust"),
   n_groups = NULL,
   max_groups = 8,
   min_silhouette = 0.25,
@@ -24,7 +24,7 @@ group_regimes(
 \item{data}{The data the signature came from, for the stability: a \code{depprep_sim}
 object or a list with \code{X} and \code{coords}, \code{time} or \code{coords} and \code{index}.}
 
-\item{method}{\code{"hclust"} or \code{"mclust"}.}
+\item{method}{\code{"mclust"} (default) or \code{"hclust"}.}
 
 \item{n_groups}{Number of groups of dependent variables; chosen from the data when
 \code{NULL}.}
@@ -68,11 +68,13 @@ strength, trend R-squared and shift indicator.
 }
 
 Each component is standardised robustly (median and median absolute deviation).
-With \code{method = "hclust"} the variables are grouped by Ward's method and the number
-of groups is the one with the largest mean silhouette (2 to \code{max_groups}); if that
-silhouette is below \code{min_silhouette} they form a single group. With
-\code{method = "mclust"} a Gaussian mixture is fitted and the number of groups chosen by
-BIC.
+With \code{method = "mclust"} (the default) a Gaussian mixture is fitted and the number of
+groups is chosen by BIC. With \code{method = "hclust"} the variables are grouped by Ward's
+method and the number of groups is the one with the largest mean silhouette (2 to
+\code{max_groups}); if that silhouette is below \code{min_silhouette} they form a single group.
+In the stage 3 simulation grid the mixture recovered the true groups better in
+temporal and spatio-temporal data, while the silhouette rule almost always chose two
+groups and merged different regimes.
 
 \strong{Stability.} With \code{B > 0} and \code{data}, the grouping is repeated on \code{B} subsamples
 of the observations (a share \code{subsample} of the sites, drawn without replacement, and

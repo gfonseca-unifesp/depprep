@@ -12,11 +12,13 @@
 #'   strength, trend R-squared and shift indicator.
 #'
 #' Each component is standardised robustly (median and median absolute deviation).
-#' With `method = "hclust"` the variables are grouped by Ward's method and the number
-#' of groups is the one with the largest mean silhouette (2 to `max_groups`); if that
-#' silhouette is below `min_silhouette` they form a single group. With
-#' `method = "mclust"` a Gaussian mixture is fitted and the number of groups chosen by
-#' BIC.
+#' With `method = "mclust"` (the default) a Gaussian mixture is fitted and the number of
+#' groups is chosen by BIC. With `method = "hclust"` the variables are grouped by Ward's
+#' method and the number of groups is the one with the largest mean silhouette (2 to
+#' `max_groups`); if that silhouette is below `min_silhouette` they form a single group.
+#' In the stage 3 simulation grid the mixture recovered the true groups better in
+#' temporal and spatio-temporal data, while the silhouette rule almost always chose two
+#' groups and merged different regimes.
 #'
 #' **Stability.** With `B > 0` and `data`, the grouping is repeated on `B` subsamples
 #' of the observations (a share `subsample` of the sites, drawn without replacement, and
@@ -30,7 +32,7 @@
 #' @param signature Output of [diagnose_variables()] (one family).
 #' @param data The data the signature came from, for the stability: a `depprep_sim`
 #'   object or a list with `X` and `coords`, `time` or `coords` and `index`.
-#' @param method `"hclust"` or `"mclust"`.
+#' @param method `"mclust"` (default) or `"hclust"`.
 #' @param n_groups Number of groups of dependent variables; chosen from the data when
 #'   `NULL`.
 #' @param max_groups Largest number of groups considered.
@@ -55,7 +57,7 @@
 #' group_regimes(diagnose_variables(s))
 #' @importFrom mclust mclustBIC
 #' @export
-group_regimes <- function(signature, data = NULL, method = c("hclust", "mclust"), n_groups = NULL,
+group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust"), n_groups = NULL,
                           max_groups = 8, min_silhouette = 0.25, B = 0, subsample = 0.8, ambiguity = 0.7,
                           thresholds = default_thresholds(), seed = NULL) {
   method <- match.arg(method)

@@ -6,7 +6,8 @@
 #      number of groups chosen;
 #   2. stability: 20 replicates per scenario, B = 50 subsamples, with hclust and mclust;
 #      co-association and the link between instability and wrong assignments;
-#   3. bases: 50 replicates per scenario; one basis per group with the estimated and with
+#   3. bases: 50 replicates per scenario; one basis per group with the estimated (mclust,
+#      the default fixed by decision D6) and with
 #      the true (oracle) grouping; k, k/n, capture and absorption of each basis, and k/n
 #      of the union of every pair of groups.
 #

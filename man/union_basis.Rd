@@ -4,12 +4,13 @@
 \alias{union_basis}
 \title{Union of bases}
 \usage{
-union_basis(..., kn_max = 0.25)
+union_basis(..., kn_max = 0.3)
 }
 \arguments{
 \item{...}{Bases from \code{\link[=build_group_basis]{build_group_basis()}} (same observations, same row order).}
 
-\item{kn_max}{Largest share of degrees of freedom; a warning is given above it.}
+\item{kn_max}{Largest share of degrees of freedom; a warning is given above it. The
+default, 0.3, was not exceeded by any union of two groups in the simulation grid.}
 }
 \value{
 A matrix with orthonormal columns of class \code{depprep_basis} (type \code{"union"}).

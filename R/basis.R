@@ -86,7 +86,8 @@ build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL,
 #' between variables of different groups. Redundant directions are dropped.
 #'
 #' @param ... Bases from [build_group_basis()] (same observations, same row order).
-#' @param kn_max Largest share of degrees of freedom; a warning is given above it.
+#' @param kn_max Largest share of degrees of freedom; a warning is given above it. The
+#'   default, 0.3, was not exceeded by any union of two groups in the simulation grid.
 #' @return A matrix with orthonormal columns of class `depprep_basis` (type `"union"`).
 #' @examples
 #' g <- sim_groups(sim_group("long", 3, "exponential", range = 0.5),
@@ -96,7 +97,7 @@ build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL,
 #' b2 <- build_group_basis(s$X[, 4:6], coords = s$coords, type = "isotropic", seed = 1)
 #' attr(union_basis(b1, b2), "k")
 #' @export
-union_basis <- function(..., kn_max = 0.25) {
+union_basis <- function(..., kn_max = 0.3) {
   bases <- list(...)
   n <- unique(vapply(bases, nrow, integer(1)))
   if (length(n) != 1) stop("All bases must have the same number of rows.", call. = FALSE)
