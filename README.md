@@ -3,8 +3,9 @@
 **Dependence-aware preprocessing for multivariate exploratory analysis.**
 
 > **Status:** early development — stages 0 to 3 are complete (simulation generators and
-> the diagnosis of each variable); stage 4 (grouping and shared bases) is in progress. The
-> correction itself is not implemented yet; do not use the package on real data.
+> the diagnosis of each variable); stage 4 (grouping and shared bases) is implemented and
+> in validation. The correction itself is not implemented yet; do not use the package on
+> real data.
 
 ---
 
@@ -81,7 +82,7 @@ from recorded seeds into `results/` on your machine.
 | 1 | Is there a gap? Which real data? | `analysis/01a_*`, `01b_*`, `01c_*` | done |
 | 2 | Can we simulate data with known truth? | `R/sim_*.R`, `analysis/02_*`, `02b_*` | done |
 | 3 | Diagnose each variable's dependence | `R/diagnose*.R`, `R/classify.R`, `analysis/03_*` | done |
-| 4 | Group regimes and build shared bases | — | in progress |
+| 4 | Group regimes and build shared bases | `R/group.R`, `R/basis.R`, `analysis/04_*` | in validation |
 | 5 | Correct, and show that shared bases avoid the distortion | — | planned |
 | 6 | Pilot with PCA, MDS, k-means and SOM | — | planned |
 | 7 | Full simulations | — | planned |
@@ -113,6 +114,14 @@ add spatial autocorrelation that belongs to the interpolation, not to the proces
 | --- | --- |
 | `analysis/03_diagnostics.R` | Signatures of every variable in the simulation grid (200 replicates per scenario, run in parallel and resumable), classification accuracy, scale errors and bootstrap coverage |
 | `analysis/03_diagnostics_figures.R` | Scheme of the diagnosis, a didactic variogram, the typical signature of each regime, confusion matrices, scale uncertainty and the threshold calibration curves |
+
+### Stage 4 — grouping and shared bases
+
+| Script | What it produces |
+| --- | --- |
+| `analysis/d4_scenarios.R` | The simulation grid (groups, scenarios, truth, one replicate), shared by the stage scripts |
+| `analysis/04_grouping.R` | Grouping of the stage 3 signatures (hclust and mclust, 200 replicates per scenario), stability over subsamples, and one basis per group with the estimated and the true grouping: k/n, capture of the true large-scale structure and absorption of the true residual |
+| `analysis/04_grouping_figures.R` | Scheme, didactic Moran eigenvector maps, one replicate step by step, agreement with the true groups, stability, degrees of freedom and the k/n threshold curves |
 
 ## 5. Getting started
 
@@ -198,7 +207,29 @@ thresholds (`default_thresholds()`), calibrated on the stage 3 simulations: a va
 dependent when Moran's or the Ljung-Box p-value is below 0.05, anisotropic when the
 anisotropy ratio is above 2.5, seasonal when the seasonal strength is above 0.2.
 
-## 8. Reproducibility
+## 8. Quick start: groups and shared bases
+
+```r
+sig <- diagnose_variables(sim)
+gr  <- group_regimes(sig, data = sim, B = 50, seed = 1)   # groups + stability
+gr[, c("variable", "group", "group_type", "stability", "ambiguous")]
+
+members <- gr$variable[gr$group == "g1"]
+b <- build_group_basis(sim$X[, members], coords = sim$coords,
+                       type = gr$group_type[gr$group == "g1"][1], seed = 1)
+b                                         # one basis for every variable of the group
+```
+
+`group_regimes()` keeps the variables without dependence in their own group (no basis)
+and groups the others on their signature components, using only the signatures. With
+`B > 0` it repeats the grouping on subsamples and flags unstable (ambiguous) variables.
+`build_group_basis()` selects one basis for the whole group by forward selection among
+orthonormal candidates — Moran eigenvector maps in space, harmonics, trend and slow
+temporal eigenvectors in time, and their products in space-time — with permutation tests
+and a cap on the share of degrees of freedom (`kn_max`). `union_basis()` joins the bases
+of two groups for the pairs of variables across them.
+
+## 9. Reproducibility
 
 - **Seeds.** Every simulation uses an explicit seed, stored in its output. The generators
   use the L'Ecuyer-CMRG generator with one independent stream per component (coordinates,
@@ -211,6 +242,6 @@ anisotropy ratio is above 2.5, seasonal when the seasonal strength is above 0.2.
   moving pattern, and more.
 - **Package versions.** `renv.lock` pins every package.
 
-## 9. License
+## 10. License
 
 MIT — see `LICENSE.md`.
