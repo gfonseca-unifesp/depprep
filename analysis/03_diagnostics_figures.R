@@ -163,7 +163,7 @@ p <- ggplot(dl, aes(threshold, rate, colour = error)) + geom_line(linewidth = 0.
   scale_x_log10(breaks = pvals) + scale_y_continuous(labels = scales::percent) +
   facet_wrap(~ family) + scale_colour_manual(values = c(pal[["brown"]], pal[["teal"]]), name = NULL) +
   labs(title = "Declaring 'no dependence': the p-value threshold (all scenarios together)",
-       subtitle = "Dashed line: candidate threshold 0.05. Spatial p-values come from 499 permutations (smallest possible p = 0.002)",
+       subtitle = "Dashed line: threshold 0.05 adopted in D5. Spatial p-values come from 499 permutations (smallest possible p = 0.002)",
        x = "p-value threshold (log scale)", y = "share of variables") +
   theme(legend.position = "bottom")
 save_fig(p, "diag_thresholds_dependence.png", 10, 4)
@@ -188,7 +188,7 @@ p <- ggplot(other, aes(value, accuracy)) + geom_line(colour = pal[["teal"]], lin
   geom_vline(data = cand, aes(xintercept = value), linetype = "dashed", colour = pal[["grey"]]) +
   facet_wrap(~ threshold_name, scales = "free_x", nrow = 1) + scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
   labs(title = "Accuracy of the other rules against their threshold (dependent variables only)",
-       subtitle = "Dashed line: candidate value", x = "threshold", y = "classified correctly")
+       subtitle = "Dashed line: value adopted in decision D5", x = "threshold", y = "classified correctly")
 save_fig(p, "diag_thresholds_other.png", 11, 3.6)
 
 # range: isotropic variables only (for anisotropic ones the simulated range is the one of
