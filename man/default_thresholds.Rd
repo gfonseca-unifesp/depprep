@@ -2,7 +2,7 @@
 % Please edit documentation in R/classify.R
 \name{default_thresholds}
 \alias{default_thresholds}
-\title{Candidate thresholds for classify_regime()}
+\title{Default thresholds for classify_regime()}
 \usage{
 default_thresholds()
 }
@@ -20,8 +20,9 @@ a series is declared seasonal;
 }
 }
 \description{
-Provisional values, to be fixed by decision D5 of the project after the stage 3
-simulations.
+Values calibrated on the stage 3 simulations (60,000 variables with known regime):
+the p-value threshold keeps false positives near 5\%; the anisotropy and seasonal
+thresholds are the ones with the best accuracy on the threshold curves.
 }
 \examples{
 default_thresholds()

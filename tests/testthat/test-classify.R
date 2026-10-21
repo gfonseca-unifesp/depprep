@@ -30,6 +30,9 @@ test_that("thresholds change the labels and default_thresholds is complete", {
   expect_equal(unname(classify_regime(s, list(p_dependence = 0.01))), "none")
   expect_equal(unname(classify_regime(s, list(aniso_ratio = 1.2))), "anisotropic")
   expect_named(default_thresholds(), c("p_dependence", "aniso_ratio", "seasonal_strength", "trend_r2", "shift"))
+  expect_equal(unlist(default_thresholds()),
+               c(p_dependence = 0.05, aniso_ratio = 2.5, seasonal_strength = 0.2, trend_r2 = 0.4, shift = 0.08))
+  expect_equal(unname(classify_regime(sig("spatial", moran_p = 0.001, aniso_ratio = 2.2))), "isotropic")
 })
 
 test_that("clean simulated temporal regimes are classified correctly", {

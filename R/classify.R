@@ -1,7 +1,8 @@
-#' Candidate thresholds for classify_regime()
+#' Default thresholds for classify_regime()
 #'
-#' Provisional values, to be fixed by decision D5 of the project after the stage 3
-#' simulations.
+#' Values calibrated on the stage 3 simulations (60,000 variables with known regime):
+#' the p-value threshold keeps false positives near 5%; the anisotropy and seasonal
+#' thresholds are the ones with the best accuracy on the threshold curves.
 #'
 #' @return A list with:
 #' * `p_dependence`: Moran (spatial) or Ljung-Box (temporal) p-value below which a
@@ -16,7 +17,7 @@
 #' default_thresholds()
 #' @export
 default_thresholds <- function() {
-  list(p_dependence = 0.05, aniso_ratio = 2, seasonal_strength = 0.15, trend_r2 = 0.4, shift = 0.08)
+  list(p_dependence = 0.05, aniso_ratio = 2.5, seasonal_strength = 0.2, trend_r2 = 0.4, shift = 0.08)
 }
 
 #' Classify the dependence regime of each variable

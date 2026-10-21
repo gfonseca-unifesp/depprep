@@ -194,7 +194,9 @@ estimate. It works on spatial (`coords`), temporal (`time`) and spatio-temporal
 
 With `B > 0` it adds a parametric bootstrap of the range and of phi (standard error and
 90% interval). `classify_regime()` turns a signature into a regime type with explicit
-thresholds (`default_thresholds()`), which are provisional until the project fixes them.
+thresholds (`default_thresholds()`), calibrated on the stage 3 simulations: a variable is
+dependent when Moran's or the Ljung-Box p-value is below 0.05, anisotropic when the
+anisotropy ratio is above 2.5, seasonal when the seasonal strength is above 0.2.
 
 ## 8. Reproducibility
 
