@@ -165,7 +165,10 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust",
     diag(D) <- 0
     dimnames(D) <- list(signature$variable[idx], signature$variable[idx])
     distances[[g]] <- D
-    sub <- stats::cutree(stats::hclust(stats::as.dist(D), method = "average"), h = threshold)
+    tree <- stats::hclust(stats::as.dist(D), method = "average")
+    # cut by number of groups: rounding can leave the merge heights slightly unsorted,
+    # which cutree(h = ) refuses
+    sub <- stats::cutree(tree, k = sum(tree$height > threshold) + 1)
     if (length(unique(sub)) > 1) {
       lab <- names(sort(table(sub), decreasing = TRUE))     # subgroups by decreasing size
       group[idx] <- paste0(g, ".", match(as.character(sub), lab))
