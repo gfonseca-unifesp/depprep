@@ -11,7 +11,9 @@ diagnose_variables(
   index = NULL,
   B = 0,
   seed = NULL,
-  k = 8
+  k = 8,
+  nsim = 499,
+  perm_seed = 1L
 )
 }
 \arguments{
@@ -29,6 +31,12 @@ the spatio-temporal family.}
 \item{seed}{Seed for the bootstrap (required when \code{B > 0}).}
 
 \item{k}{Number of nearest neighbours for Moran's I.}
+
+\item{nsim}{Number of permutations for Moran's p-value (0 = normal approximation,
+which is optimistic in small samples).}
+
+\item{perm_seed}{Seed of the permutations; each variable gets its own stream, so a
+signature does not depend on the other variables and is reproducible.}
 }
 \value{
 A data frame of class \code{depprep_signature}, one row per variable.

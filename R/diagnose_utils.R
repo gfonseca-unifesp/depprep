@@ -10,8 +10,15 @@
   spdep::nb2listw(spdep::make.sym.nb(nb), style = "W")
 }
 
-# Moran's I with its p-value (randomisation, one-sided: positive autocorrelation).
-.moran <- function(z, lw) {
+# Moran's I with its one-sided p-value (positive autocorrelation). With nsim > 0 the
+# p-value comes from a permutation test (exact; uses the current random stream). The
+# normal approximation (nsim = 0) is optimistic in small samples: in stage 3 it gave
+# 5-13% false positives at a nominal 5%.
+.moran <- function(z, lw, nsim = 0) {
+  if (nsim > 0) {
+    t <- spdep::moran.mc(z, lw, nsim = nsim, alternative = "greater")
+    return(c(moran_I = unname(t$statistic), moran_p = t$p.value))
+  }
   t <- spdep::moran.test(z, lw, randomisation = TRUE, alternative = "greater")
   c(moran_I = unname(t$estimate[["Moran I statistic"]]), moran_p = t$p.value)
 }
@@ -124,7 +131,7 @@
 #   direction. shift_indicator is the gain of the best direction minus the median
 #   gain over directions; shift_direction is that direction (degrees, from the
 #   neighbour to the site, counter-clockwise from the x axis).
-.st_stats <- function(z, coords, index, lw = NULL, k = 8, n_slices = 6, n_sites = 30, max_lag = 10) {
+.st_stats <- function(z, coords, index, lw = NULL, k = 8, n_slices = 6, n_sites = 30, max_lag = 10, nsim = 0) {
   coords <- as.matrix(coords)
   n <- nrow(coords)
   nt <- max(index$time)
@@ -134,7 +141,7 @@
   med <- function(x) stats::median(x, na.rm = TRUE)
   slices <- unique(round(seq(1, nt, length.out = n_slices)))
   sp <- t(vapply(slices, function(s) {
-    m <- .moran(zm[, s], lw)
+    m <- .moran(zm[, s], lw, nsim)
     f <- .fit_variogram(coords, zm[, s])
     c(m, range = f$range, nugget_ratio = f$nugget_ratio)
   }, numeric(4)))

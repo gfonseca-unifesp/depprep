@@ -58,3 +58,12 @@ test_that(".fit_variogram returns NA values, not an error, when nothing converge
   expect_type(f, "list")
   expect_true(is.na(f$range))
 })
+
+test_that("the permutation Moran test keeps false positives at the nominal level", {
+  skip_on_cran()
+  xy <- depprep:::.with_stream(5, 1, matrix(stats::runif(200), ncol = 2))
+  lw <- depprep:::.knn_weights(xy, 8)
+  p <- depprep:::.with_stream(7, 6, vapply(1:300, function(i) depprep:::.moran(stats::rnorm(100), lw, nsim = 199)[["moran_p"]], 0))
+  expect_lt(mean(p < 0.05), 0.08)
+  expect_gt(mean(p < 0.05), 0.02)
+})

@@ -99,7 +99,11 @@ one_bootstrap <- function(sc, r) {
 }
 
 # --- Run -------------------------------------------------------------------------------
-cl <- makeCluster(max(1, min(24, detectCores() - 4)))
+# Workers start their own R session and activate renv; its sandbox step can take more
+# than a minute when many workers start together, so it is switched off for them and
+# the connection timeout is raised.
+Sys.setenv(RENV_CONFIG_SANDBOX_ENABLED = "FALSE")
+cl <- makeCluster(max(1, min(24, detectCores() - 4)), setup_timeout = 900)
 clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE)); NULL }, getwd())
 clusterExport(cl, c("base_seed", "B", "spatial_groups", "temporal_groups", "st_groups", "truth_table",
                     "simulate", "one_replicate", "one_bootstrap"))

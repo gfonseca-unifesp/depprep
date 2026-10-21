@@ -2,8 +2,9 @@
 
 **Dependence-aware preprocessing for multivariate exploratory analysis.**
 
-> **Status:** early development — stage 2 of 7 (simulation generators) is complete.
-> The correction itself is not implemented yet; do not use the package on real data.
+> **Status:** early development — stages 0 to 2 are complete and stage 3 (diagnosis of
+> each variable) is implemented. The correction itself is not implemented yet; do not use
+> the package on real data.
 
 ---
 
@@ -64,7 +65,7 @@ from recorded seeds into `results/` on your machine.
 
 | Path | Content |
 | --- | --- |
-| `R/` | Package functions (currently the simulation generators) |
+| `R/` | Package functions: simulation generators and the diagnosis of each variable |
 | `tests/testthat/` | Tests with known truth for every function |
 | `man/` | Function documentation (generated with roxygen2) |
 | `analysis/` | One script per project stage, numbered in the order they are run |
@@ -79,7 +80,7 @@ from recorded seeds into `results/` on your machine.
 | 0 | Reproducible environment | package skeleton, `renv.lock` | done |
 | 1 | Is there a gap? Which real data? | `analysis/01a_*`, `01b_*`, `01c_*` | done |
 | 2 | Can we simulate data with known truth? | `R/sim_*.R`, `analysis/02_*`, `02b_*` | done |
-| 3 | Diagnose each variable's dependence | — | next |
+| 3 | Diagnose each variable's dependence | `R/diagnose*.R`, `R/classify.R`, `analysis/03_*` | in validation |
 | 4 | Group regimes and build shared bases | — | planned |
 | 5 | Correct, and show that shared bases avoid the distortion | — | planned |
 | 6 | Pilot with PCA, MDS, k-means and SOM | — | planned |
@@ -105,6 +106,13 @@ add spatial autocorrelation that belongs to the interpolation, not to the proces
 | --- | --- |
 | `analysis/02_simulation_examples.R` | Schemes of the generator, galleries of the candidate regimes, variograms, space-time maps and Hovmöller diagrams, the apparent-association matrices, observation classes and the time to generate one replicate |
 | `analysis/02b_generator_recovery.R` | Recovery of the simulated range and AR coefficient in 50 replicates per scenario, and the error of the residual and raw correlations |
+
+### Stage 3 — diagnosis of each variable
+
+| Script | What it produces |
+| --- | --- |
+| `analysis/03_diagnostics.R` | Signatures of every variable in the simulation grid (200 replicates per scenario, run in parallel and resumable), classification accuracy, scale errors and bootstrap coverage |
+| `analysis/03_diagnostics_figures.R` | Scheme of the diagnosis, a didactic variogram, the typical signature of each regime, confusion matrices, scale uncertainty and the threshold calibration curves |
 
 ## 5. Getting started
 
@@ -164,7 +172,31 @@ class of each observation, and the seed. Optional observation classes
 (`classes = list(k = 3, type = "random" | "contiguous", effect = 1)`) provide the truth
 for k-means and SOM.
 
-## 7. Reproducibility
+## 7. Quick start: diagnosing each variable
+
+```r
+sig <- diagnose_variables(sim)            # one dependence signature per variable
+sig[, c("variable", "moran_p", "range", "nugget_ratio", "aniso_ratio")]
+classify_regime(sig)                      # "none", "isotropic", "anisotropic", ...
+```
+
+`diagnose_variables()` looks at **one variable at a time** — its variogram, its
+autocorrelation, its periodogram — and never at the correlations between variables, so
+that the later choice of a correction does not reuse the associations it is meant to
+estimate. It works on spatial (`coords`), temporal (`time`) and spatio-temporal
+(`coords` + `index`) data, or directly on a simulation object:
+
+| Family | Signature components |
+| --- | --- |
+| Spatial | Moran's I and p-value; nugget, sill and practical range of the best of an exponential and a spherical variogram; anisotropy ratio and direction |
+| Temporal | lag-1 autocorrelation, AR(1) coefficient and AIC order, Ljung-Box p-value, dominant seasonal period and its strength, trend R-squared |
+| Spatio-temporal | the spatial statistics on time slices, the temporal ones on sites, and a shift indicator that detects a pattern moving in one direction |
+
+With `B > 0` it adds a parametric bootstrap of the range and of phi (standard error and
+90% interval). `classify_regime()` turns a signature into a regime type with explicit
+thresholds (`default_thresholds()`), which are provisional until the project fixes them.
+
+## 8. Reproducibility
 
 - **Seeds.** Every simulation uses an explicit seed, stored in its output. The generators
   use the L'Ecuyer-CMRG generator with one independent stream per component (coordinates,
@@ -177,6 +209,6 @@ for k-means and SOM.
   moving pattern, and more.
 - **Package versions.** `renv.lock` pins every package.
 
-## 8. License
+## 9. License
 
 MIT — see `LICENSE.md`.

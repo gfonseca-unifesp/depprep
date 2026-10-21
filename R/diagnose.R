@@ -32,6 +32,10 @@
 #'   the spatio-temporal family.
 #' @param seed Seed for the bootstrap (required when `B > 0`).
 #' @param k Number of nearest neighbours for Moran's I.
+#' @param nsim Number of permutations for Moran's p-value (0 = normal approximation,
+#'   which is optimistic in small samples).
+#' @param perm_seed Seed of the permutations; each variable gets its own stream, so a
+#'   signature does not depend on the other variables and is reproducible.
 #' @return A data frame of class `depprep_signature`, one row per variable.
 #' @examples
 #' g <- sim_groups(sim_group("long", 2, "exponential", range = 0.5),
@@ -39,7 +43,8 @@
 #' s <- sim_spatial(200, g, seed = 1)
 #' diagnose_variables(s)[, c("variable", "moran_p", "range", "nugget_ratio")]
 #' @export
-diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 0, seed = NULL, k = 8) {
+diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 0, seed = NULL, k = 8,
+                               nsim = 499, perm_seed = 1L) {
   if (inherits(X, "depprep_sim")) {
     sim <- X
     X <- sim$X
@@ -69,7 +74,7 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
     z <- X[, j]
     out <- .empty_signature()
     if (family == "spatial") {
-      m <- .moran(z, lw)
+      m <- .with_stream(perm_seed + j, .streams[["permutation"]], .moran(z, lw, nsim))
       f <- .fit_variogram(coords, z)
       out[c("moran_I", "moran_p")] <- as.list(m)
       out[c("vario_model", "nugget", "sill", "range", "nugget_ratio")] <- f[c("vario_model", "nugget", "sill", "range", "nugget_ratio")]
@@ -86,7 +91,7 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
                                                                 .boot_phi(length(z), ts[["phi"]], B)))
       }
     } else {
-      st <- .st_stats(z, coords, index, lw = lw, k = k)
+      st <- .with_stream(perm_seed + j, .streams[["permutation"]], .st_stats(z, coords, index, lw = lw, k = k, nsim = nsim))
       out[names(st)] <- as.list(st)
     }
     out$variable <- colnames(X)[j]
