@@ -16,6 +16,15 @@
   c(moran_I = unname(t$estimate[["Moran I statistic"]]), moran_p = t$p.value)
 }
 
+# gstat::fit.variogram() prints advice when a fit does not converge; those cases are
+# handled as missing values, so the printout is silenced.
+.quiet_fit <- function(v, model) {
+  out <- NULL
+  utils::capture.output(out <- tryCatch(suppressWarnings(gstat::fit.variogram(v, model)),
+                                        error = function(e) NULL))
+  out
+}
+
 # Practical range of a fitted model: 3a for the exponential (correlation 0.05), a for
 # the spherical (correlation exactly 0).
 .practical_range <- function(model, a) ifelse(model == "Exp", 3 * a, a)
@@ -31,7 +40,7 @@
   best <- NULL
   for (m in models) {
     init <- gstat::vgm(0.7 * vz, m, cutoff / 3, nugget = 0.3 * vz)
-    fit <- tryCatch(suppressWarnings(gstat::fit.variogram(v, init)), error = function(e) NULL)
+    fit <- .quiet_fit(v, init)
     if (is.null(fit) || isTRUE(attr(fit, "singular"))) next
     a <- fit$range[fit$model == m]
     if (!length(a) || !is.finite(a) || a <= 0 || any(fit$psill < 0)) next
@@ -63,8 +72,7 @@
   rng <- vapply(angles, function(a) {
     va <- v[v$dir.hor == a, ]
     if (nrow(va) < 4) return(NA_real_)
-    fit <- tryCatch(suppressWarnings(gstat::fit.variogram(va, gstat::vgm(0.7 * vz, "Exp", cutoff / 3, nugget = 0.3 * vz))),
-                    error = function(e) NULL)
+    fit <- .quiet_fit(va, gstat::vgm(0.7 * vz, "Exp", cutoff / 3, nugget = 0.3 * vz))
     if (is.null(fit) || isTRUE(attr(fit, "singular"))) return(NA_real_)
     r <- 3 * fit$range[fit$model == "Exp"]
     if (!is.finite(r) || r <= 0) NA_real_ else min(r, 10 * cutoff)  # cap runaway fits
@@ -72,4 +80,82 @@
   ok <- is.finite(rng)
   if (sum(ok) < 2) return(c(aniso_ratio = NA_real_, aniso_direction = NA_real_))
   c(aniso_ratio = max(rng[ok]) / min(rng[ok]), aniso_direction = angles[ok][which.max(rng[ok])])
+}
+
+# --- Temporal --------------------------------------------------------------------------
+
+# Temporal statistics of one regular series. The seasonal period is searched among
+# periods up to a third of the series, so that slow persistence or trends (whose
+# peak sits at the lowest frequencies) are not read as seasonality.
+.temporal_stats <- function(x, max_order = 10) {
+  n <- length(x)
+  x <- x - mean(x)
+  t <- seq_len(n)
+  acf1 <- stats::acf(x, 1, plot = FALSE)$acf[2]
+  ar_order <- tryCatch(stats::ar(x, aic = TRUE, order.max = max_order, method = "yule-walker")$order,
+                       error = function(e) NA_integer_)
+  phi <- tryCatch(unname(stats::arima(x, order = c(1, 0, 0), include.mean = FALSE)$coef[1]),
+                  error = function(e) acf1)
+  lb_p <- stats::Box.test(x, lag = min(10, floor(n / 5)), type = "Ljung-Box")$p.value
+  sp <- stats::spec.pgram(x, taper = 0, detrend = FALSE, demean = TRUE, fast = FALSE, plot = FALSE)
+  cand <- which(1 / sp$freq <= n / 3)
+  k <- cand[which.max(sp$spec[cand])]
+  c(acf1 = acf1, phi = phi, ar_order = ar_order, ljung_p = lb_p,
+    period = 1 / sp$freq[k], period_strength = sp$spec[k] / sum(sp$spec),
+    trend_r2 = summary(stats::lm(x ~ t))$r.squared)
+}
+
+# --- Spatio-temporal -------------------------------------------------------------------
+
+# Statistics of one spatio-temporal variable `z` (rows ordered as in
+# sim_spatiotemporal(): sites vary fastest within each time).
+# - spatial: Moran and variogram on `n_slices` time slices. Moran's p-value is the
+#   smallest one times the number of slices (Bonferroni), because a seasonal amplitude
+#   map is invisible in slices where the cycle crosses zero; the range is the median
+#   over the slices with structure;
+# - temporal: .temporal_stats() on up to `n_sites` sites (medians);
+# - movement, between neighbours i, j of the same variable: |cor(z_i(t + L), z_j(t))|
+#   for lags L = 1..max_lag against the same-time |cor(z_i, z_j)|. A pattern that
+#   moves brings the upstream neighbour's past to the site, but only from one
+#   direction; noise and separable fields give the same (biased) gain in every
+#   direction. shift_indicator is the gain of the best direction minus the median
+#   gain over directions; shift_direction is that direction (degrees, from the
+#   neighbour to the site, counter-clockwise from the x axis).
+.st_stats <- function(z, coords, index, lw = NULL, k = 8, n_slices = 6, n_sites = 30, max_lag = 10) {
+  coords <- as.matrix(coords)
+  n <- nrow(coords)
+  nt <- max(index$time)
+  zm <- matrix(NA_real_, n, nt)
+  zm[cbind(index$site, index$time)] <- z
+  if (is.null(lw)) lw <- .knn_weights(coords, k)
+  med <- function(x) stats::median(x, na.rm = TRUE)
+  slices <- unique(round(seq(1, nt, length.out = n_slices)))
+  sp <- t(vapply(slices, function(s) {
+    m <- .moran(zm[, s], lw)
+    f <- .fit_variogram(coords, zm[, s])
+    c(m, range = f$range, nugget_ratio = f$nugget_ratio)
+  }, numeric(4)))
+  structured <- sp[, "moran_p"] < 0.05
+  use <- if (any(structured)) structured else rep(TRUE, nrow(sp))
+  sites <- unique(round(seq(1, n, length.out = min(n, n_sites))))
+  tm <- t(vapply(sites, function(i) .temporal_stats(zm[i, ]), numeric(7)))
+  nb <- spdep::knearneigh(coords, k = k)$nn
+  pairs <- data.frame(i = rep(sites, each = k), j = as.vector(t(nb[sites, , drop = FALSE])))
+  lags <- seq_len(max(1, min(max_lag, floor(nt / 4))))
+  lagcor <- function(x, y, L) stats::cor(x[(L + 1):nt], y[1:(nt - L)])  # x(t + L) vs y(t)
+  r_same <- abs(mapply(function(i, j) stats::cor(zm[i, ], zm[j, ]), pairs$i, pairs$j))
+  r_lag <- abs(matrix(unlist(mapply(function(i, j) vapply(lags, function(L) lagcor(zm[i, ], zm[j, ], L), 0),
+                                    pairs$i, pairs$j, SIMPLIFY = FALSE)), ncol = length(lags), byrow = TRUE))
+  gain <- apply(r_lag, 1, max, na.rm = TRUE) - r_same
+  ang <- atan2(coords[pairs$i, 2] - coords[pairs$j, 2], coords[pairs$i, 1] - coords[pairs$j, 1]) * 180 / pi
+  bin <- (round(ang / 45) %% 8) * 45
+  gain_bin <- tapply(gain, bin, mean, na.rm = TRUE)
+  c(moran_I = med(sp[use, "moran_I"]), moran_p = min(1, min(sp[, "moran_p"]) * nrow(sp)),
+    range = med(sp[use, "range"]), nugget_ratio = med(sp[use, "nugget_ratio"]),
+    acf1 = med(tm[, "acf1"]), phi = med(tm[, "phi"]), ar_order = med(tm[, "ar_order"]),
+    ljung_p = med(tm[, "ljung_p"]),
+    period = as.numeric(names(which.max(table(round(tm[, "period"]))))),
+    period_strength = med(tm[, "period_strength"]), trend_r2 = med(tm[, "trend_r2"]),
+    shift_indicator = max(gain_bin, na.rm = TRUE) - med(gain_bin),
+    shift_direction = as.numeric(names(gain_bin)[which.max(gain_bin)]))
 }
