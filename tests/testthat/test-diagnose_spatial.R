@@ -45,7 +45,7 @@ test_that(".anisotropy separates anisotropic from isotropic fields", {
   skip_on_cran()
   ratio <- function(a, seed) {
     s <- sp_field(0.25, seed = seed, anisotropy = a, angle = 30)
-    depprep:::.anisotropy(s$coords, s$X[, 1])[["aniso_ratio"]]
+    depprep:::.anisotropy(s$coords, s$X[, 1], depprep:::.fit_variogram(s$coords, s$X[, 1]))[["aniso_ratio"]]
   }
   iso <- vapply(1:20, function(i) ratio(1, 500 + i), 0)
   ani <- vapply(1:20, function(i) ratio(4, 500 + i), 0)

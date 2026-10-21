@@ -59,27 +59,30 @@
        nugget_ratio = if (sill > 0) nug / sill else NA_real_, fit = f)
 }
 
-# Anisotropy from directional variograms. gstat angles are clockwise from north
-# (the y axis). Returns the ratio between the largest and smallest fitted range and
-# the direction (gstat angle) of the largest one.
-.anisotropy <- function(coords, z, angles = c(0, 45, 90, 135), cutoff = NULL) {
+# Anisotropy from directional variograms, without fitting one model per direction
+# (those fits are unstable). The nugget and range come from the omnidirectional fit
+# `fit` (output of .fit_variogram()). In each direction, the structural semivariance
+# (semivariance minus nugget) is averaged over the short lags, up to half the range,
+# where the variogram rises roughly in proportion to distance / range: the direction
+# with the slowest rise has the longest range. The ratio between the largest and the
+# smallest rise estimates the anisotropy ratio. gstat angles are clockwise from north
+# (the y axis); `aniso_direction` is the direction of the longest range.
+.anisotropy <- function(coords, z, fit, angles = c(0, 45, 90, 135)) {
+  if (is.null(fit$fit) || !is.finite(fit$range)) return(c(aniso_ratio = NA_real_, aniso_direction = NA_real_))
   d <- data.frame(as.matrix(coords), z = z)
   names(d)[1:2] <- c("x", "y")
-  if (is.null(cutoff)) cutoff <- 0.5 * sqrt(sum(apply(d[, 1:2], 2, function(v) diff(range(v)))^2))
-  v <- gstat::variogram(z ~ 1, locations = ~ x + y, data = d, cutoff = cutoff,
+  short <- fit$range / 2
+  v <- gstat::variogram(z ~ 1, locations = ~ x + y, data = d, cutoff = short, width = short / 5,
                         alpha = angles, tol.hor = 180 / length(angles) / 2)
-  vz <- stats::var(z)
-  rng <- vapply(angles, function(a) {
-    va <- v[v$dir.hor == a, ]
-    if (nrow(va) < 4) return(NA_real_)
-    fit <- .quiet_fit(va, gstat::vgm(0.7 * vz, "Exp", cutoff / 3, nugget = 0.3 * vz))
-    if (is.null(fit) || isTRUE(attr(fit, "singular"))) return(NA_real_)
-    r <- 3 * fit$range[fit$model == "Exp"]
-    if (!is.finite(r) || r <= 0) NA_real_ else min(r, 10 * cutoff)  # cap runaway fits
+  if (is.null(v) || !NROW(v)) return(c(aniso_ratio = NA_real_, aniso_direction = NA_real_))
+  rise <- vapply(angles, function(a) {
+    va <- v[v$dir.hor == a & v$np > 0, ]
+    if (!NROW(va)) return(NA_real_)
+    stats::weighted.mean(pmax(va$gamma - fit$nugget, 0) / va$dist, va$np)
   }, numeric(1))
-  ok <- is.finite(rng)
+  ok <- is.finite(rise) & rise > 0
   if (sum(ok) < 2) return(c(aniso_ratio = NA_real_, aniso_direction = NA_real_))
-  c(aniso_ratio = max(rng[ok]) / min(rng[ok]), aniso_direction = angles[ok][which.max(rng[ok])])
+  c(aniso_ratio = max(rise[ok]) / min(rise[ok]), aniso_direction = angles[ok][which.min(rise[ok])])
 }
 
 # --- Temporal --------------------------------------------------------------------------

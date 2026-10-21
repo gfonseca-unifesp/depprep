@@ -73,7 +73,7 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
       f <- .fit_variogram(coords, z)
       out[c("moran_I", "moran_p")] <- as.list(m)
       out[c("vario_model", "nugget", "sill", "range", "nugget_ratio")] <- f[c("vario_model", "nugget", "sill", "range", "nugget_ratio")]
-      out[c("aniso_ratio", "aniso_direction")] <- as.list(.anisotropy(coords, z))
+      out[c("aniso_ratio", "aniso_direction")] <- as.list(.anisotropy(coords, z, f))
       if (B > 0 && !is.null(f$fit)) {
         out[c("range_se", "range_lo", "range_hi")] <- as.list(.with_stream(seed + j, .streams[["bootstrap"]],
                                                                       .boot_range(coords, f$fit, B)))
