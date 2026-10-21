@@ -40,6 +40,10 @@ Regimes for \code{\link[=sim_group]{sim_group()}}:
 at this distance), \code{anisotropy} (ratio between the ranges along the major and
 minor axes, default 1) and \code{angle} (direction of the major axis in degrees,
 default 0).
+\item \code{"matern"}: as \code{"exponential"}, with a Matern covariance of smoothness
+\code{smoothness} (0.5, 1.5 or 2.5; default 2.5). The exponential is the Matern with
+smoothness 0.5: a rough field, with much variance at small scales; larger values
+give smoother fields with the same practical range.
 \item \code{"none"}: no large-scale component.
 }
 }

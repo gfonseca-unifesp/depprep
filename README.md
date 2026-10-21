@@ -170,9 +170,9 @@ of the unit square):
 
 | Simulator | Regimes and parameters |
 | --- | --- |
-| `sim_spatial(n, groups, ...)` | `"exponential"` (`range`, `anisotropy`, `angle`), `"none"` |
+| `sim_spatial(n, groups, ...)` | `"exponential"` (`range`, `anisotropy`, `angle`), `"matern"` (the same plus `smoothness` = 0.5, 1.5 or 2.5; smoother fields with the same practical range), `"none"` |
 | `sim_temporal(n_times, groups, ...)` | `"ar1"` (`phi`), `"seasonal"` (`period`, `phase`), `"trend_shift"` (`slope`, `jump`, `shift_at`), `"none"` |
-| `sim_spatiotemporal(n, n_times, groups, ...)` | `"separable_ar1"` (`range`, `phi`), `"separable_seasonal"` (`range`, `period`), `"moving"` (`range`, `velocity`), `"temporal_common"` (`phi`), `"none"` |
+| `sim_spatiotemporal(n, n_times, groups, ...)` | `"separable_ar1"` (`range`, `phi`), `"separable_seasonal"` (`range`, `period`), `"moving"` (`range`, `velocity`), `"temporal_common"` (`phi`), `"none"`; the spatial fields accept `smoothness` |
 
 Every simulator returns the data `X`, the coordinates and/or times, the true group of each
 variable, the separate components (`large`, `residual`, `class`), `R_true`, the true

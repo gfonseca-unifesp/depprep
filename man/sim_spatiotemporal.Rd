@@ -54,6 +54,12 @@ two-element vector, in units of the side of the domain per time step); the
 field is drawn with random Fourier features of the exponential covariance;
 parameters \code{range}, \code{velocity}, \code{anisotropy}, \code{angle}, \code{n_features}.
 \item \code{"temporal_common"}: one AR(1) series shared by all sites; parameter \code{phi}.
+}
+
+The spatial fields of the first three regimes are exponential by default; the
+optional parameter \code{smoothness} (0.5, 1.5 or 2.5) makes them Matern, smoother for
+larger values (see \code{\link[=sim_spatial]{sim_spatial()}}).
+\itemize{
 \item \code{"none"}: no large-scale component.
 }
 }

@@ -16,6 +16,10 @@
 #'   field is drawn with random Fourier features of the exponential covariance;
 #'   parameters `range`, `velocity`, `anisotropy`, `angle`, `n_features`.
 #' * `"temporal_common"`: one AR(1) series shared by all sites; parameter `phi`.
+#'
+#' The spatial fields of the first three regimes are exponential by default; the
+#' optional parameter `smoothness` (0.5, 1.5 or 2.5) makes them Matern, smoother for
+#' larger values (see [sim_spatial()]).
 #' * `"none"`: no large-scale component.
 #'
 #' @inheritParams sim_spatial
@@ -49,24 +53,24 @@ sim_spatiotemporal <- function(n, n_times, groups, R_true = NULL, coords = NULL,
     out <- list()
     for (g in groups) {
       if (!is.null(g$shared_with) || g$regime == "none") next
-      p <- utils::modifyList(list(anisotropy = 1, angle = 0), g$params)
+      p <- utils::modifyList(list(anisotropy = 1, angle = 0, smoothness = 0.5), g$params)
       z <- switch(g$regime,
         separable_ar1 = {
           need(p, c("range", "phi"), g$name)
-          e <- .grf_chol(coords, p$range, p$anisotropy, p$angle, n_sim = n_times)
+          e <- .grf_chol(coords, p$range, p$anisotropy, p$angle, n_sim = n_times, smoothness = p$smoothness)
           for (t in seq_len(n_times)[-1]) e[, t] <- p$phi * e[, t - 1] + sqrt(1 - p$phi^2) * e[, t]
           e
         },
         separable_seasonal = {
           need(p, c("range", "period"), g$name)
           phase <- if (is.null(p$phase)) stats::runif(1, 0, 2 * pi) else p$phase
-          f <- .grf_chol(coords, p$range, p$anisotropy, p$angle)
+          f <- .grf_chol(coords, p$range, p$anisotropy, p$angle, smoothness = p$smoothness)
           as.vector(f) %o% .seasonal(n_times, p$period, phase)
         },
         moving = {
           need(p, c("range", "velocity"), g$name)
           f <- .rff_sampler(p$range, p$anisotropy, p$angle,
-                            n_features = if (is.null(p$n_features)) 1000 else p$n_features)
+                            n_features = if (is.null(p$n_features)) 1000 else p$n_features, smoothness = p$smoothness)
           vapply(seq_len(n_times), function(t) {
             f(coords - matrix(p$velocity * t, n, 2, byrow = TRUE))
           }, numeric(n))

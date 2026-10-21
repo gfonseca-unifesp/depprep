@@ -37,6 +37,23 @@
 # Exponential correlation with practical range `range` (correlation 0.05 at `range`).
 .exp_cor <- function(h, range) exp(-3 * h / range)
 
+# Matern correlation with smoothness nu in {0.5, 1.5, 2.5} and practical range `range`.
+# nu = 0.5 is the exponential (rough fields); larger nu gives smoother fields. With
+# s = sqrt(2 nu) h / l, the correlation is exp(-s), (1 + s) exp(-s) or
+# (1 + s + s^2 / 3) exp(-s); l is chosen so that the correlation is 0.05 at `range`.
+.matern_shape <- function(s, nu) {
+  switch(as.character(nu), "0.5" = exp(-s), "1.5" = (1 + s) * exp(-s), "2.5" = (1 + s + s^2 / 3) * exp(-s),
+         stop("`smoothness` must be 0.5, 1.5 or 2.5.", call. = FALSE))
+}
+.matern_s0 <- function(nu) {
+  if (nu == 0.5) return(3)
+  stats::uniroot(function(s) .matern_shape(s, nu) - 0.05, c(0.1, 20), tol = 1e-12)$root
+}
+.matern_cor <- function(h, range, nu) {
+  if (nu == 0.5) return(.exp_cor(h, range))
+  .matern_shape(.matern_s0(nu) * h / range, nu)
+}
+
 # Geometric anisotropy: rotate so that the major axis (at `angle` degrees from the
 # x axis) lies on x, then stretch the minor axis by `ratio`. The practical range is
 # `range` along the major axis and `range / ratio` along the minor axis.
@@ -48,24 +65,30 @@
   xy
 }
 
-# Gaussian random field(s) with exponential covariance, by Cholesky factorisation.
-# Returns an n x n_sim matrix with unit variance.
-.grf_chol <- function(coords, range, ratio = 1, angle = 0, n_sim = 1) {
+# Gaussian random field(s) with Matern covariance (exponential by default), by
+# Cholesky factorisation. Returns an n x n_sim matrix with unit variance. Smooth
+# covariances are ill-conditioned, so they get a larger jitter (a tiny nugget).
+.grf_chol <- function(coords, range, ratio = 1, angle = 0, n_sim = 1, smoothness = 0.5) {
   xy <- .aniso_coords(coords, ratio, angle)
-  cmat <- .exp_cor(as.matrix(stats::dist(xy)), range)
-  u <- chol(cmat + diag(1e-10, nrow(cmat)))
+  cmat <- .matern_cor(as.matrix(stats::dist(xy)), range, smoothness)
+  u <- chol(cmat + diag(if (smoothness == 0.5) 1e-10 else 1e-6, nrow(cmat)))
   t(u) %*% matrix(stats::rnorm(nrow(cmat) * n_sim), nrow(cmat))
 }
 
-# Random Fourier features for the exponential covariance. The spectral measure of
-# exp(-|h| / a) in two dimensions is a bivariate Cauchy (multivariate t with one
-# degree of freedom) with scale 1 / a. Returns a function that evaluates one field
-# realisation at any set of coordinates, which is what a moving pattern needs.
-.rff_sampler <- function(range, ratio = 1, angle = 0, n_features = 1000) {
+# Random Fourier features for the Matern covariance. The spectral measure of a Matern
+# with smoothness nu and length l (correlation M(sqrt(2 nu) |h| / l)) in two dimensions
+# is a multivariate t with 2 nu degrees of freedom and scale 1 / l; for the exponential
+# (nu = 0.5) it is a bivariate Cauchy with scale 3 / range. Returns a function that
+# evaluates one field realisation at any set of coordinates, which is what a moving
+# pattern needs.
+.rff_sampler <- function(range, ratio = 1, angle = 0, n_features = 1000, smoothness = 0.5) {
   a <- range / 3
-  w <- stats::rchisq(n_features, df = 1)
+  w <- stats::rchisq(n_features, df = 2 * smoothness)
   z <- matrix(stats::rnorm(2 * n_features), n_features)
-  omega <- z / (a * sqrt(w))
+  omega <- if (smoothness == 0.5) z / (a * sqrt(w)) else {
+    l <- sqrt(2 * smoothness) * range / .matern_s0(smoothness)
+    z / (l * sqrt(w / (2 * smoothness)))
+  }
   b <- stats::runif(n_features, 0, 2 * pi)
   function(coords) {
     xy <- .aniso_coords(coords, ratio, angle)
