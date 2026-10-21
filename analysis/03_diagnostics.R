@@ -41,7 +41,7 @@ temporal_groups <- function(weak_phi) sim_groups(
   sim_group("none", 6, "none"))
 st_groups <- function() sim_groups(
   sim_group("sep_long", 6, "separable_ar1", range = 0.5, phi = 0.9),
-  sim_group("sep_short", 6, "separable_seasonal", range = 0.1, period = 12),
+  sim_group("sep_short", 6, "separable_seasonal", range = 0.25, period = 12),   # 0.1 was not identifiable (D10)
   sim_group("moving", 6, "moving", range = 0.25, velocity = c(0.02, 0)),
   sim_group("common", 6, "temporal_common", phi = 0.9),
   sim_group("none", 6, "none"))
@@ -130,6 +130,7 @@ stopCluster(cl)
 # --- Summary -----------------------------------------------------------------------------
 all <- do.call(rbind, lapply(scenarios$id, function(k) readRDS(file.path(out_dir, sprintf("scenario_%02d.rds", k)))))
 all$label <- scenarios$label[all$scenario]
+all$type <- unname(classify_regime(all))   # classified again, so new thresholds need no new run
 all$correct <- all$type == all$true_type
 saveRDS(all, file.path("results", "diagnostics_variables.rds"))
 
