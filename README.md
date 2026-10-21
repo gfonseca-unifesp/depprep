@@ -2,10 +2,9 @@
 
 **Dependence-aware preprocessing for multivariate exploratory analysis.**
 
-> **Status:** early development — stages 0 to 3 are complete (simulation generators and
-> the diagnosis of each variable); stage 4 (grouping and shared bases) is implemented and
-> in validation. The correction itself is not implemented yet; do not use the package on
-> real data.
+> **Status:** early development — stages 0 to 4 are complete (simulation generators, the
+> diagnosis of each variable, grouping and shared bases); stage 5 (the correction) is in
+> progress. Do not use the package on real data yet.
 
 ---
 
@@ -82,8 +81,8 @@ from recorded seeds into `results/` on your machine.
 | 1 | Is there a gap? Which real data? | `analysis/01a_*`, `01b_*`, `01c_*` | done |
 | 2 | Can we simulate data with known truth? | `R/sim_*.R`, `analysis/02_*`, `02b_*` | done |
 | 3 | Diagnose each variable's dependence | `R/diagnose*.R`, `R/classify.R`, `analysis/03_*` | done |
-| 4 | Group regimes and build shared bases | `R/group.R`, `R/basis.R`, `analysis/04_*` | in validation |
-| 5 | Correct, and show that shared bases avoid the distortion | — | planned |
+| 4 | Group regimes and build shared bases | `R/group.R`, `R/basis.R`, `analysis/04_*` | done |
+| 5 | Correct, and show that shared bases avoid the distortion | — | in progress |
 | 6 | Pilot with PCA, MDS, k-means and SOM | — | planned |
 | 7 | Full simulations | — | planned |
 
