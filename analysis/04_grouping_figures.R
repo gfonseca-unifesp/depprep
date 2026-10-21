@@ -98,7 +98,7 @@ dendro_segments <- function(h) {
 ex_k <- 2L; ex_r <- 1L                                      # S n=400 high, replicate 1
 d3 <- readRDS(file.path("results", "diagnostics", sprintf("scenario_%02d.rds", ex_k)))
 sig <- d3[d3$replicate == ex_r, ]
-g <- group_regimes(sig)
+g <- group_regimes(sig, method = "hclust")                  # the tree illustrates hierarchical grouping
 tree <- attr(g, "tree")
 dep <- g$group != "none"
 seg <- dendro_segments(tree)
@@ -181,7 +181,7 @@ p <- ggplot(kd[kd$grouping == "estimated", ], aes(what, kn)) +
   geom_hline(yintercept = c(0.1, 0.2, 0.3), linetype = "dashed", colour = "grey60") +
   geom_boxplot(fill = "#e0eff0", outlier.size = 0.4) + coord_flip() + facet_wrap(~ label, ncol = 5, scales = "free_y") +
   labs(title = "Share of degrees of freedom used by each basis (k/n), estimated grouping, 50 replicates per scenario",
-       subtitle = "Dashed lines: candidate thresholds 0.1, 0.2, 0.3. Selection stops at 0.25 per group",
+       subtitle = "Dashed lines: 0.1, 0.2 and 0.3 (warning threshold adopted in D6). Selection stops at 0.25 per group",
        x = NULL, y = "k / n") + theme(axis.text.y = element_text(size = 7))
 save_fig(p, "grp_kn.png", 12, 6.5)
 
@@ -206,10 +206,12 @@ kt <- do.call(rbind, lapply(ths, function(t) {
 }))
 names(kt)[names(kt) == "kn"] <- "share_above"
 write.csv(kt, file.path("results", "kn_threshold.csv"), row.names = FALSE)
-p <- ggplot(kt, aes(threshold, share_above, colour = kind)) + geom_line(linewidth = 0.9) + geom_point() +
+p <- ggplot(kt, aes(threshold, share_above, colour = kind)) +
+  geom_vline(xintercept = 0.3, linetype = "dashed", colour = pal[["grey"]]) + geom_line(linewidth = 0.9) + geom_point() +
   facet_wrap(~ family) + scale_y_continuous(labels = scales::percent) +
   scale_colour_manual(values = c(pal[["teal"]], pal[["brown"]]), name = NULL) +
   labs(title = "Share of bases that would get a warning, by k/n threshold (estimated grouping, all scenarios)",
+       subtitle = "Dashed line: 0.3, adopted in D6",
        x = "k/n threshold", y = "share above the threshold") + theme(legend.position = "bottom")
 save_fig(p, "grp_kn_threshold.png", 10, 3.8)
 message("Figures written to ", fig_dir)
