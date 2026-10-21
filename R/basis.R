@@ -112,6 +112,31 @@ union_basis <- function(..., kn_max = 0.3) {
   .as_basis(Q, "union", n, NA_real_, terms[q$pivot[seq_len(q$rank)]])
 }
 
+#' Distance between two bases
+#'
+#' How differently two bases describe the large scale: 1 minus the sum of the squared
+#' cosines of the principal angles between their subspaces, divided by the larger
+#' dimension. 0 = the same subspace; 1 = orthogonal subspaces. Used to tell whether two
+#' variables vary in the same places ([group_regimes()] with `split = "subspace"`).
+#'
+#' @param b1,b2 Bases from [build_group_basis()] (orthonormal columns, same rows).
+#' @return A number between 0 and 1.
+#' @examples
+#' g <- sim_groups(sim_group("a", 1, "matern", range = 0.5), sim_group("b", 1, "matern", range = 0.5))
+#' s <- sim_spatial(300, g, seed = 1)
+#' b1 <- build_group_basis(s$X[, 1, drop = FALSE], coords = s$coords, type = "isotropic", seed = 1)
+#' b2 <- build_group_basis(s$X[, 2, drop = FALSE], coords = s$coords, type = "isotropic", seed = 1)
+#' basis_distance(b1, b2)    # independent fields: far apart
+#' @export
+basis_distance <- function(b1, b2) {
+  B1 <- unclass(b1); B2 <- unclass(b2)
+  if (nrow(B1) != nrow(B2)) stop("Both bases must have the same number of rows.", call. = FALSE)
+  k <- max(ncol(B1), ncol(B2))
+  if (k == 0) return(0)
+  if (min(ncol(B1), ncol(B2)) == 0) return(1)
+  1 - sum(crossprod(B1, B2)^2) / k
+}
+
 #' @export
 print.depprep_basis <- function(x, ...) {
   cat(sprintf("<depprep_basis> type %s: k = %d of n = %d (k/n = %.3f)\n",

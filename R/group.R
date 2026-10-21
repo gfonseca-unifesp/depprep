@@ -18,7 +18,17 @@
 #' `max_groups`); if that silhouette is below `min_silhouette` they form a single group.
 #' In the stage 3 simulation grid the mixture recovered the true groups better in
 #' temporal and spatio-temporal data, while the silhouette rule almost always chose two
-#' groups and merged different regimes.
+#' groups and merged different regimes. With `method = "type"` the first level is just
+#' the regime type of [classify_regime()]; it is meant to be combined with
+#' `split = "subspace"`.
+#'
+#' **Second level (subspace).** Variables with the same regime can still vary in
+#' different places (independent large-scale fields with the same range); one basis
+#' for all of them would have to cover all their patterns. With `split = "subspace"`
+#' each dependent variable first gets its own basis ([build_group_basis()] on that
+#' variable alone, so still marginal information), and within each regime group the
+#' variables are split by the distance between their bases ([basis_distance()];
+#' average linkage, cut at `split_threshold`). Subgroups are named `g1.1`, `g1.2`, ...
 #'
 #' **Stability.** With `B > 0` and `data`, the grouping is repeated on `B` subsamples
 #' of the observations (a share `subsample` of the sites, drawn without replacement, and
@@ -27,12 +37,13 @@
 #' variables is the share of subsamples in which they fall in the same group; the
 #' stability of a variable is its mean co-association with the other members of its
 #' group. Variables below `ambiguity` are flagged as ambiguous. Membership of the
-#' `"none"` group is decided on the full data and is not resampled.
+#' `"none"` group is decided on the full data and is not resampled. Stability refers to
+#' the first (regime) level.
 #'
 #' @param signature Output of [diagnose_variables()] (one family).
 #' @param data The data the signature came from, for the stability: a `depprep_sim`
 #'   object or a list with `X` and `coords`, `time` or `coords` and `index`.
-#' @param method `"mclust"` (default) or `"hclust"`.
+#' @param method `"mclust"` (default), `"hclust"` or `"type"`.
 #' @param n_groups Number of groups of dependent variables; chosen from the data when
 #'   `NULL`.
 #' @param max_groups Largest number of groups considered.
@@ -43,12 +54,17 @@
 #' @param subsample Share of the observations kept in each subsample.
 #' @param ambiguity Stability below which a variable is flagged as ambiguous.
 #' @param thresholds Thresholds of [classify_regime()].
-#' @param seed Seed of the subsamples; required when `B > 0`.
+#' @param split `"none"` (one level) or `"subspace"` (split each regime group by the
+#'   overlap of the variables' own bases; needs `data` and `split_threshold`).
+#' @param split_threshold Largest basis distance (0 to 1) within a subgroup.
+#' @param seed Seed of the subsamples and of the bases of the second level; required
+#'   when `B > 0`.
 #' @return A data frame of class `depprep_grouping` with one row per variable:
 #'   `variable`, `type` (its regime type), `group`, `group_type` (most frequent type in
 #'   the group), `stability` and `ambiguous`. Attributes: `method`, `n_groups`,
 #'   `silhouette`, `coassociation` (matrix, dependent variables), `tree` (hclust),
-#'   `period` and `ar_order` (median by group), `family`.
+#'   `period` and `ar_order` (median by group), `family`, and with
+#'   `split = "subspace"` `basis_distance` (one matrix per regime group).
 #' @examples
 #' g <- sim_groups(sim_group("long", 4, "exponential", range = 0.5),
 #'                 sim_group("short", 4, "exponential", range = 0.1),
@@ -57,10 +73,15 @@
 #' group_regimes(diagnose_variables(s))
 #' @importFrom mclust mclustBIC
 #' @export
-group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust"), n_groups = NULL,
+group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust", "type"), n_groups = NULL,
                           max_groups = 8, min_silhouette = 0.25, B = 0, subsample = 0.8, ambiguity = 0.7,
-                          thresholds = default_thresholds(), seed = NULL) {
+                          thresholds = default_thresholds(), split = c("none", "subspace"), split_threshold = NULL,
+                          seed = NULL) {
   method <- match.arg(method)
+  split <- match.arg(split)
+  if (split == "subspace" && (is.null(data) || is.null(split_threshold))) {
+    stop("`data` and `split_threshold` are required when `split = \"subspace\"`.", call. = FALSE)
+  }
   stopifnot(inherits(signature, "data.frame"), "family" %in% names(signature))
   family <- unique(signature$family)
   if (length(family) != 1) stop("`signature` must hold a single family.", call. = FALSE)
@@ -72,7 +93,9 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust")
   fit <- list(cluster = integer(0), k = 0L, silhouette = NA_real_, tree = NULL)
   if (any(dep)) {
     Z <- .grouping_components(signature[dep, , drop = FALSE])
-    fit <- .cluster(Z, method, n_groups, max_groups, min_silhouette)
+    fit <- if (method == "type") {
+      list(cluster = as.integer(factor(type[dep])), k = length(unique(type[dep])), silhouette = NA_real_, tree = NULL)
+    } else .cluster(Z, method, n_groups, max_groups, min_silhouette)
     # groups named g1, g2, ... by decreasing size
     lab <- names(sort(table(fit$cluster), decreasing = TRUE))
     group[dep] <- paste0("g", match(as.character(fit$cluster), lab))
@@ -94,6 +117,12 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust")
     }, numeric(1))
     dimnames(co) <- list(signature$variable[dep], signature$variable[dep])
   }
+  distances <- NULL
+  if (split == "subspace" && any(dep)) {
+    sp <- .split_by_subspace(signature, data, group, group_type, split_threshold, if (is.null(seed)) 1L else seed)
+    group <- sp$group
+    distances <- sp$distances
+  }
   by_group <- function(col) {
     v <- tapply(signature[[col]], group, stats::median, na.rm = TRUE)
     v[setdiff(names(v), "none")]
@@ -103,7 +132,46 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust")
                     stringsAsFactors = FALSE)
   structure(out, class = c("depprep_grouping", "data.frame"), method = method, n_groups = fit$k,
             silhouette = fit$silhouette, coassociation = co, tree = fit$tree,
-            period = round(by_group("period")), ar_order = round(by_group("ar_order")), family = family)
+            period = round(by_group("period")), ar_order = round(by_group("ar_order")), family = family,
+            basis_distance = distances)
+}
+
+# The data as a list with X and the coordinates, times or index of its family.
+.data_parts <- function(data) {
+  if (inherits(data, "depprep_sim")) {
+    data <- list(X = data$X, coords = data$coords, time = if (data$family == "temporal") data$time, index = data$index)
+  }
+  data$X <- as.matrix(data$X)
+  data
+}
+
+# Second grouping level: within each regime group, split the variables by the distance
+# between their own bases (each selected on the variable alone).
+.split_by_subspace <- function(signature, data, group, group_type, threshold, seed) {
+  d <- .data_parts(data)
+  args <- list(coords = d$coords, time = d$time, index = d$index)
+  args <- args[!vapply(args, is.null, TRUE)]
+  if (signature$family[1] == "spatiotemporal") args$time <- NULL
+  distances <- list()
+  var_seed <- seed + rank(signature$variable, ties.method = "first")   # by name, not by column position
+  for (g in setdiff(unique(group), "none")) {
+    idx <- which(group == g)
+    if (length(idx) < 2) next
+    per <- stats::median(signature$period[idx], na.rm = TRUE)
+    bases <- lapply(idx, function(i) do.call(build_group_basis, c(list(
+      X_group = d$X[, i, drop = FALSE], type = group_type[i], period = if (is.finite(per)) round(per),
+      seed = var_seed[i]), args)))
+    D <- outer(seq_along(idx), seq_along(idx), Vectorize(function(a, b) basis_distance(bases[[a]], bases[[b]])))
+    diag(D) <- 0
+    dimnames(D) <- list(signature$variable[idx], signature$variable[idx])
+    distances[[g]] <- D
+    sub <- stats::cutree(stats::hclust(stats::as.dist(D), method = "average"), h = threshold)
+    if (length(unique(sub)) > 1) {
+      lab <- names(sort(table(sub), decreasing = TRUE))     # subgroups by decreasing size
+      group[idx] <- paste0(g, ".", match(as.character(sub), lab))
+    }
+  }
+  list(group = group, distances = distances)
 }
 
 # Signature components used for grouping (decision D5), robustly standardised.
@@ -162,10 +230,8 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust")
 # Co-association of the dependent variables over B subsamples of the observations.
 # Uses the random stream of the caller.
 .coassociation <- function(signature, data, dep, method, k, B, subsample) {
-  if (inherits(data, "depprep_sim")) {
-    data <- list(X = data$X, coords = data$coords, time = if (data$family == "temporal") data$time, index = data$index)
-  }
-  X <- as.matrix(data$X)[, dep, drop = FALSE]
+  data <- .data_parts(data)
+  X <- data$X[, dep, drop = FALSE]
   p <- ncol(X)
   co <- matrix(0, p, p)
   if (k <= 1) return(co + 1)
@@ -191,7 +257,8 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust")
       idx <- data.frame(site = match(data$index$site[w], sites), time = match(data$index$time[w], tw))
       diagnose_variables(X[w, , drop = FALSE], coords = coords[sites, , drop = FALSE], index = idx, nsim = 0)
     }
-    cl <- .cluster(.grouping_components(sig), method, n_groups = k)$cluster
+    cl <- if (method == "type") as.integer(factor(classify_regime(sig))) else
+      .cluster(.grouping_components(sig), method, n_groups = k)$cluster
     co <- co + outer(cl, cl, "==")
   }
   co / B

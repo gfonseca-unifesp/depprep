@@ -67,3 +67,36 @@ test_that("temporal and spatio-temporal grouping run and report periods", {
   shared <- gr2$group != "none" & (duplicated(gr2$group) | duplicated(gr2$group, fromLast = TRUE))
   expect_false(anyNA(gr2$stability[shared]))
 })
+
+test_that("basis_distance is 0 for the same subspace and 1 for orthogonal ones", {
+  Q <- qr.Q(qr(matrix(stats::rnorm(400), 100)))
+  b1 <- structure(Q[, 1:2], class = "depprep_basis")
+  b2 <- structure(Q[, 3:4], class = "depprep_basis")
+  b3 <- structure(Q[, 2:1], class = "depprep_basis")
+  expect_equal(basis_distance(b1, b3), 0)
+  expect_equal(basis_distance(b1, b2), 1)
+  expect_equal(basis_distance(b1, b2), basis_distance(b2, b1))
+  empty <- structure(matrix(0, 100, 0), class = "depprep_basis")
+  expect_equal(basis_distance(empty, empty), 0)
+  expect_equal(basis_distance(b1, empty), 1)
+})
+
+test_that("the subspace level separates variables of the same regime with independent fields", {
+  g <- sim_groups(sim_group("a1", 4, "matern", range = 0.5), sim_group("a2", 4, "matern", range = 0.5),
+                  sim_group("none", 3, "none"))
+  s <- sim_spatial(400, g, seed = 1)
+  sig <- diagnose_variables(s, nsim = 99)
+  gr <- group_regimes(sig, data = s, method = "type", split = "subspace", split_threshold = 0.55, seed = 1)
+  expect_equal(mclust::adjustedRandIndex(gr$group, s$group), 1)
+  D <- attr(gr, "basis_distance")[[1]]
+  expect_equal(D, t(D))
+  expect_true(all(diag(D) == 0))
+  # same field: closer than independent fields (on average; single pairs can overlap)
+  f <- sub("_[0-9]+$", "", rownames(D))
+  expect_lt(mean(D[outer(f, f, "==") & upper.tri(D)]), mean(D[outer(f, f, "!=")]))
+  o <- sample.int(nrow(sig))
+  s_o <- s; s_o$X <- s$X[, o]
+  gr_o <- group_regimes(sig[o, ], data = s_o, method = "type", split = "subspace", split_threshold = 0.55, seed = 1)
+  expect_equal(mclust::adjustedRandIndex(gr_o$group, gr$group[o]), 1)
+  expect_error(group_regimes(sig, split = "subspace"), "required")
+})

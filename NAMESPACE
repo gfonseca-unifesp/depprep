@@ -2,6 +2,7 @@
 
 S3method(print,depprep_basis)
 S3method(print,depprep_sim)
+export(basis_distance)
 export(build_group_basis)
 export(classify_regime)
 export(default_thresholds)

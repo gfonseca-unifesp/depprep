@@ -7,7 +7,7 @@
 group_regimes(
   signature,
   data = NULL,
-  method = c("mclust", "hclust"),
+  method = c("mclust", "hclust", "type"),
   n_groups = NULL,
   max_groups = 8,
   min_silhouette = 0.25,
@@ -15,6 +15,8 @@ group_regimes(
   subsample = 0.8,
   ambiguity = 0.7,
   thresholds = default_thresholds(),
+  split = c("none", "subspace"),
+  split_threshold = NULL,
   seed = NULL
 )
 }
@@ -24,7 +26,7 @@ group_regimes(
 \item{data}{The data the signature came from, for the stability: a \code{depprep_sim}
 object or a list with \code{X} and \code{coords}, \code{time} or \code{coords} and \code{index}.}
 
-\item{method}{\code{"mclust"} (default) or \code{"hclust"}.}
+\item{method}{\code{"mclust"} (default), \code{"hclust"} or \code{"type"}.}
 
 \item{n_groups}{Number of groups of dependent variables; chosen from the data when
 \code{NULL}.}
@@ -43,14 +45,21 @@ real data).}
 
 \item{thresholds}{Thresholds of \code{\link[=classify_regime]{classify_regime()}}.}
 
-\item{seed}{Seed of the subsamples; required when \code{B > 0}.}
+\item{split}{\code{"none"} (one level) or \code{"subspace"} (split each regime group by the
+overlap of the variables' own bases; needs \code{data} and \code{split_threshold}).}
+
+\item{split_threshold}{Largest basis distance (0 to 1) within a subgroup.}
+
+\item{seed}{Seed of the subsamples and of the bases of the second level; required
+when \code{B > 0}.}
 }
 \value{
 A data frame of class \code{depprep_grouping} with one row per variable:
 \code{variable}, \code{type} (its regime type), \code{group}, \code{group_type} (most frequent type in
 the group), \code{stability} and \code{ambiguous}. Attributes: \code{method}, \code{n_groups},
 \code{silhouette}, \code{coassociation} (matrix, dependent variables), \code{tree} (hclust),
-\code{period} and \code{ar_order} (median by group), \code{family}.
+\code{period} and \code{ar_order} (median by group), \code{family}, and with
+\code{split = "subspace"} \code{basis_distance} (one matrix per regime group).
 }
 \description{
 Groups the variables by their dependence signatures, so that each group can later
@@ -74,7 +83,17 @@ method and the number of groups is the one with the largest mean silhouette (2 t
 \code{max_groups}); if that silhouette is below \code{min_silhouette} they form a single group.
 In the stage 3 simulation grid the mixture recovered the true groups better in
 temporal and spatio-temporal data, while the silhouette rule almost always chose two
-groups and merged different regimes.
+groups and merged different regimes. With \code{method = "type"} the first level is just
+the regime type of \code{\link[=classify_regime]{classify_regime()}}; it is meant to be combined with
+\code{split = "subspace"}.
+
+\strong{Second level (subspace).} Variables with the same regime can still vary in
+different places (independent large-scale fields with the same range); one basis
+for all of them would have to cover all their patterns. With \code{split = "subspace"}
+each dependent variable first gets its own basis (\code{\link[=build_group_basis]{build_group_basis()}} on that
+variable alone, so still marginal information), and within each regime group the
+variables are split by the distance between their bases (\code{\link[=basis_distance]{basis_distance()}};
+average linkage, cut at \code{split_threshold}). Subgroups are named \code{g1.1}, \code{g1.2}, ...
 
 \strong{Stability.} With \code{B > 0} and \code{data}, the grouping is repeated on \code{B} subsamples
 of the observations (a share \code{subsample} of the sites, drawn without replacement, and
@@ -83,7 +102,8 @@ again (without permutations) and the same number of groups. The co-association o
 variables is the share of subsamples in which they fall in the same group; the
 stability of a variable is its mean co-association with the other members of its
 group. Variables below \code{ambiguity} are flagged as ambiguous. Membership of the
-\code{"none"} group is decided on the full data and is not resampled.
+\code{"none"} group is decided on the full data and is not resampled. Stability refers to
+the first (regime) level.
 }
 \examples{
 g <- sim_groups(sim_group("long", 4, "exponential", range = 0.5),
