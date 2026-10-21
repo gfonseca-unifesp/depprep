@@ -103,7 +103,8 @@ p <- ggplot(sig, aes(component, true_type, fill = scaled)) + geom_tile(colour = 
 save_fig(p, "diag_signature_by_regime.png", 11, 4)
 
 # --- 4. Confusion matrices ---------------------------------------------------------------
-conf <- as.data.frame(table(label = all$label, true = all$true_type, classified = all$type))
+conf <- as.data.frame(table(label = all$label, true = all$true_type, classified = all$type), stringsAsFactors = FALSE)
+conf$label <- factor(conf$label, levels(all$label))
 conf <- conf[conf$Freq > 0 | conf$true == conf$classified, ]
 tot <- aggregate(Freq ~ label + true, data = conf, FUN = sum)
 conf <- merge(conf, setNames(tot, c("label", "true", "total")))
@@ -143,7 +144,8 @@ ggsave(file.path(fig_dir, "diag_scale_range.png"), p1, width = 8, height = 4, dp
 ggsave(file.path(fig_dir, "diag_scale_phi.png"), p2, width = 6, height = 4, dpi = 150, bg = "white")
 
 # --- 6. Thresholds (D5) ---------------------------------------------------------------------
-pvals <- c(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2)
+# the smallest attainable permutation p-value with 499 permutations is 0.002
+pvals <- c(0.005, 0.01, 0.025, 0.05, 0.1, 0.2)
 dep <- do.call(rbind, lapply(pvals, function(pt) {
   do.call(rbind, lapply(split(all, all$family), function(d) {
     lab <- classify_regime(structure(d, class = c("depprep_signature", "data.frame")), list(p_dependence = pt))
@@ -161,7 +163,8 @@ p <- ggplot(dl, aes(threshold, rate, colour = error)) + geom_line(linewidth = 0.
   scale_x_log10(breaks = pvals) + scale_y_continuous(labels = scales::percent) +
   facet_wrap(~ family) + scale_colour_manual(values = c(pal[["brown"]], pal[["teal"]]), name = NULL) +
   labs(title = "Declaring 'no dependence': the p-value threshold (all scenarios together)",
-       subtitle = "Dashed line: candidate threshold 0.05", x = "p-value threshold (log scale)", y = "share of variables") +
+       subtitle = "Dashed line: candidate threshold 0.05. Spatial p-values come from 499 permutations (smallest possible p = 0.002)",
+       x = "p-value threshold (log scale)", y = "share of variables") +
   theme(legend.position = "bottom")
 save_fig(p, "diag_thresholds_dependence.png", 10, 4)
 
@@ -188,7 +191,9 @@ p <- ggplot(other, aes(value, accuracy)) + geom_line(colour = pal[["teal"]], lin
        subtitle = "Dashed line: candidate value", x = "threshold", y = "classified correctly")
 save_fig(p, "diag_thresholds_other.png", 11, 3.6)
 
-cov <- rbind(data.frame(parameter = "range", aggregate(range_cover ~ label, data = boot, FUN = mean)) |> setNames(c("parameter", "label", "coverage")),
+# range: isotropic variables only (for anisotropic ones the simulated range is the one of
+# the major axis, while the diagnosis estimates an omnidirectional range)
+cov <- rbind(data.frame(parameter = "range", aggregate(range_cover ~ label, data = boot[boot$true_type == "isotropic", ], FUN = mean)) |> setNames(c("parameter", "label", "coverage")),
              data.frame(parameter = "phi", aggregate(phi_cover ~ label, data = boot, FUN = mean)) |> setNames(c("parameter", "label", "coverage")))
 write.csv(cov, file.path("results", "diagnostics_bootstrap_coverage.csv"), row.names = FALSE)
 message("Figures written to ", fig_dir)
