@@ -229,7 +229,39 @@ temporal eigenvectors in time, and their products in space-time — with permuta
 and a cap on the share of degrees of freedom (`kn_max`). `union_basis()` joins the bases
 of two groups for the pairs of variables across them.
 
-## 9. Reproducibility
+## 9. Known limits: why purely spatial regimes are hard to tell apart
+
+In the simulations the diagnosis and the grouping work well in time and in space-time,
+but much less well for purely spatial data with up to a few hundred sites. The reasons
+are informative about real data, not only about the method:
+
+1. **Different processes can look alike on average.** An anisotropic field (patches
+   elongated in one direction, as a river plume along a coast) has a long range along
+   its axis and a short one across it. Seen in all directions at once, its average scale
+   is close to that of a short-range isotropic field. In the simulation grid the two
+   regimes had nearly the same estimated range, nugget and Moran's I; only the
+   anisotropy ratio, the noisiest part of the signature, set them apart.
+2. **A map is a single realisation.** A time series of a few hundred steps repeats the
+   same process many times, so its persistence or its seasonal cycle is estimated
+   precisely. A map of a few hundred sites is one draw of a spatial field: neighbouring
+   sites repeat each other's information, and the estimated range varies a lot from one
+   map to another.
+3. **Small-scale noise hides short-range structure.** Variation without spatial
+   structure (measurement error, processes finer than the sampling) adds to the
+   variogram at every distance. When the range is short, the structure lives at the
+   few short distances where there are fewest pairs of sites, and it blends into the
+   nugget.
+4. **Sampling density sets what can be seen.** When the typical distance between
+   neighbouring sites is close to the range of a process, the variogram has almost no
+   points before it levels off, and the structure is read as "no dependence".
+
+What this means in practice: a grouping error between two spatial regimes of similar
+scale costs little, because they receive similar bases; the tool flags these variables
+as ambiguous (unstable over subsamples) instead of hiding the problem; and data observed
+repeatedly in time (space-time) carry much more information about each spatial regime
+than a single map. Results: `analysis/03_*` and `analysis/04_*`.
+
+## 10. Reproducibility
 
 - **Seeds.** Every simulation uses an explicit seed, stored in its output. The generators
   use the L'Ecuyer-CMRG generator with one independent stream per component (coordinates,
@@ -242,6 +274,6 @@ of two groups for the pairs of variables across them.
   moving pattern, and more.
 - **Package versions.** `renv.lock` pins every package.
 
-## 10. License
+## 11. License
 
 MIT — see `LICENSE.md`.
