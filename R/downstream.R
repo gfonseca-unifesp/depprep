@@ -1,8 +1,8 @@
 #' Run an exploratory method and score it against the truth
 #'
-#' Applies PCA, MDS, k-means or a self-organizing map (SOM) to a data set (raw or
-#' corrected) and returns the metrics of the project's protocol, comparing the result
-#' with the truth of a simulation:
+#' Applies PCA, MDS, k-means, a self-organizing map (SOM) or contiguity-constrained
+#' clustering to a data set (raw or corrected) and returns the metrics of the project's
+#' protocol, comparing the result with the truth of a simulation:
 #' * `"pca"` (on the correlation matrix `R`, or on `cor(X)`): distance between the
 #'   estimated and the true leading subspace (eigenvectors of `R_true` with eigenvalue
 #'   above 1, see [basis_distance()]); number of components above the broken-stick
@@ -17,25 +17,40 @@
 #'   number of classes;
 #' * `"som"` (5 x 5 hexagonal map; units clustered into the true number of classes, or
 #'   3): ARI, quantisation error, topographic error and the canonical correlation
-#'   between the position on the map and the position in space or time.
+#'   between the position on the map and the position in space or time;
+#' * `"constrained"` (contiguity-constrained Ward clustering, `adespatial::constr.hclust`;
+#'   Legendre & Legendre 2012, sections 12.6 and 13.3): only observations linked in
+#'   space or time may merge. The links come from `truth$position` (see below); the tree
+#'   is cut at the true number of classes, or 3. Returns that number `k`, the ARI with
+#'   the true classes (`ari_true_k`, the same gap-free metric as for k-means) and the
+#'   Rand index between the constrained partition and the k-means partition with the
+#'   same `k` (`rand_kmeans`). It is the reference method when the classes sought are
+#'   regions or periods, which any decorrelation removes.
 #'
 #' @param X Numeric matrix (observations x variables).
-#' @param method `"pca"`, `"mds"`, `"kmeans"` or `"som"`.
+#' @param method `"pca"`, `"mds"`, `"kmeans"`, `"som"` or `"constrained"`.
 #' @param truth List with any of: `R_true` (p x p), `classes` (one label per row of
 #'   `X`), `signal` (matrix, the true signal of each observation, for MDS) and
-#'   `position` (coordinates or times of the rows, for the spurious-pattern metrics).
+#'   `position` (coordinates or times of the rows, for the spurious-pattern metrics and
+#'   required by `"constrained"`). One column is time: consecutive times are linked.
+#'   Two columns are space: each site is linked to its 4 nearest neighbours (more when
+#'   needed to connect the graph). Three columns are space-time: the first two identify
+#'   the site and the third the time; a row is linked to the rows of the neighbouring
+#'   sites at the same time and to its own site at the next time.
 #' @param R Correlation matrix for PCA (`cor(X)` when `NULL`).
 #' @param distance `"euclidean"` or `"gower"` (MDS).
 #' @param k_max Largest number of groups for the gap statistic.
 #' @param B_gap Reference data sets for the gap statistic.
 #' @param seed Seed of k-means, the gap statistic and the SOM.
+#' @references Legendre, P. & Legendre, L. (2012). *Numerical Ecology*, 3rd ed.
+#'   Elsevier, sections 12.6 and 13.3.
 #' @return A data frame with `method`, `metric` and `value`.
 #' @examples
 #' set.seed(1)
 #' X <- rbind(matrix(rnorm(150, 0), 50), matrix(rnorm(150, 3), 50))
 #' run_downstream(X, "kmeans", truth = list(classes = rep(1:2, each = 50)))
 #' @export
-run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som"), truth = list(), R = NULL,
+run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som", "constrained"), truth = list(), R = NULL,
                            distance = c("euclidean", "gower"), k_max = 6, B_gap = 20, seed = 1L) {
   method <- match.arg(method)
   distance <- match.arg(distance)
@@ -81,6 +96,16 @@ run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som"), truth =
       return(out(k_gap = k_gap, k_gap_above_1 = as.numeric(k_gap > 1),
                  ari_gap = if (is.na(k_true)) NA_real_ else ari(k_gap), ari_true_k = if (is.na(k_true)) NA_real_ else ari(k_true)))
     }
+    if (method == "constrained") {
+      if (is.null(truth$position)) stop("`truth$position` is required for the constrained clustering.")
+      k <- if (is.na(k_true)) 3 else k_true
+      links <- .contiguity_links(as.matrix(truth$position))
+      tree <- adespatial::constr.hclust(stats::dist(Z), method = "ward.D2", links = links)
+      cl <- stats::cutree(tree, k)
+      km_cl <- stats::kmeans(Z, k, nstart = 10, iter.max = 50)$cluster
+      return(out(k = k, ari_true_k = if (is.na(k_true)) NA_real_ else mclust::adjustedRandIndex(cl, truth$classes),
+                 rand_kmeans = .rand_index(cl, km_cl)))
+    }
     # SOM
     grid <- kohonen::somgrid(5, 5, "hexagonal")
     sm <- kohonen::som(Z, grid = grid, rlen = 100)
@@ -100,6 +125,71 @@ run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som"), truth =
     out(ari = if (is.na(k_true)) NA_real_ else mclust::adjustedRandIndex(obs_class, truth$classes),
         quantisation_error = qe, topographic_error = te, map_position_cor = pos_cor)
   })
+}
+
+# Edges (two-column matrix of row indices, i < j) of the contiguity graph of the rows,
+# from their positions: 1 column = times (consecutive rows in time order linked), 2 columns =
+# sites (k nearest neighbours, symmetrised, k raised until the graph is connected), 3
+# columns = sites (first two) observed at times (third): neighbouring sites at the same
+# time and the same site at consecutive times.
+.contiguity_links <- function(position, k_nn = 4) {
+  edges <- function(a, b) { e <- cbind(pmin(a, b), pmax(a, b)); unique(e[e[, 1] != e[, 2], , drop = FALSE]) }
+  time_links <- function(t) {
+    o <- order(t)
+    edges(o[-length(o)], o[-1])                             # neighbours in time order
+  }
+  space_links <- function(xy) {
+    n <- nrow(xy)
+    if (n < 2) return(matrix(integer(0), 0, 2))
+    D <- as.matrix(stats::dist(xy))
+    diag(D) <- Inf
+    nn <- t(apply(D, 1, order))
+    for (k in seq(min(k_nn, n - 1), n - 1)) {
+      e <- edges(rep(seq_len(n), each = k), as.vector(t(nn[, seq_len(k), drop = FALSE])))
+      if (.n_components(n, e) == 1) return(e)
+    }
+    e
+  }
+  if (ncol(position) == 1) return(time_links(position[, 1]))
+  if (ncol(position) == 2) return(space_links(position))
+  if (ncol(position) != 3) stop("`truth$position` must have 1 (time), 2 (space) or 3 (space and time) columns.")
+  site_key <- paste(position[, 1], position[, 2], sep = "\r")
+  site <- match(site_key, unique(site_key))
+  time <- match(position[, 3], sort(unique(position[, 3])))
+  row_of <- matrix(NA_integer_, max(site), max(time))
+  row_of[cbind(site, time)] <- seq_len(nrow(position))
+  xy <- position[match(seq_len(max(site)), site), 1:2, drop = FALSE]
+  sl <- space_links(xy)
+  in_space <- do.call(rbind, lapply(seq_len(max(time)), function(t) cbind(row_of[sl[, 1], t], row_of[sl[, 2], t])))
+  in_time <- if (max(time) > 1) cbind(as.vector(row_of[, -max(time)]), as.vector(row_of[, -1])) else matrix(integer(0), 0, 2)
+  e <- rbind(in_space, in_time)
+  edges(e[stats::complete.cases(e), 1], e[stats::complete.cases(e), 2])
+}
+
+# Number of connected components of a graph with n nodes and an edge matrix.
+.n_components <- function(n, e) {
+  comp <- seq_len(n)
+  repeat {
+    old <- comp
+    m <- pmin(comp[e[, 1]], comp[e[, 2]])
+    comp[e[, 1]] <- pmin(comp[e[, 1]], m)
+    comp[e[, 2]] <- pmin(comp[e[, 2]], m)
+    comp <- comp[comp]
+    if (identical(comp, old)) break
+  }
+  length(unique(comp))
+}
+
+# Rand index between two partitions (the share of pairs of observations on which they
+# agree: together in both or apart in both).
+.rand_index <- function(a, b) {
+  tab <- table(a, b)
+  n <- sum(tab)
+  together_both <- sum(choose(tab, 2))
+  together_a <- sum(choose(rowSums(tab), 2))
+  together_b <- sum(choose(colSums(tab), 2))
+  total <- choose(n, 2)
+  (total + 2 * together_both - together_a - together_b) / total
 }
 
 # Symmetric Procrustes correlation between two configurations (same rows): both are

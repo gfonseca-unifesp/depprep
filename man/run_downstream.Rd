@@ -6,7 +6,7 @@
 \usage{
 run_downstream(
   X,
-  method = c("pca", "mds", "kmeans", "som"),
+  method = c("pca", "mds", "kmeans", "som", "constrained"),
   truth = list(),
   R = NULL,
   distance = c("euclidean", "gower"),
@@ -18,11 +18,16 @@ run_downstream(
 \arguments{
 \item{X}{Numeric matrix (observations x variables).}
 
-\item{method}{\code{"pca"}, \code{"mds"}, \code{"kmeans"} or \code{"som"}.}
+\item{method}{\code{"pca"}, \code{"mds"}, \code{"kmeans"}, \code{"som"} or \code{"constrained"}.}
 
 \item{truth}{List with any of: \code{R_true} (p x p), \code{classes} (one label per row of
 \code{X}), \code{signal} (matrix, the true signal of each observation, for MDS) and
-\code{position} (coordinates or times of the rows, for the spurious-pattern metrics).}
+\code{position} (coordinates or times of the rows, for the spurious-pattern metrics and
+required by \code{"constrained"}). One column is time: consecutive times are linked.
+Two columns are space: each site is linked to its 4 nearest neighbours (more when
+needed to connect the graph). Three columns are space-time: the first two identify
+the site and the third the time; a row is linked to the rows of the neighbouring
+sites at the same time and to its own site at the next time.}
 
 \item{R}{Correlation matrix for PCA (\code{cor(X)} when \code{NULL}).}
 
@@ -38,9 +43,9 @@ run_downstream(
 A data frame with \code{method}, \code{metric} and \code{value}.
 }
 \description{
-Applies PCA, MDS, k-means or a self-organizing map (SOM) to a data set (raw or
-corrected) and returns the metrics of the project's protocol, comparing the result
-with the truth of a simulation:
+Applies PCA, MDS, k-means, a self-organizing map (SOM) or contiguity-constrained
+clustering to a data set (raw or corrected) and returns the metrics of the project's
+protocol, comparing the result with the truth of a simulation:
 \itemize{
 \item \code{"pca"} (on the correlation matrix \code{R}, or on \code{cor(X)}): distance between the
 estimated and the true leading subspace (eigenvectors of \code{R_true} with eigenvalue
@@ -56,11 +61,23 @@ adjusted Rand index (ARI) with the true classes for that number and for the true
 number of classes;
 \item \code{"som"} (5 x 5 hexagonal map; units clustered into the true number of classes, or
 3): ARI, quantisation error, topographic error and the canonical correlation
-between the position on the map and the position in space or time.
+between the position on the map and the position in space or time;
+\item \code{"constrained"} (contiguity-constrained Ward clustering, \code{adespatial::constr.hclust};
+Legendre & Legendre 2012, sections 12.6 and 13.3): only observations linked in
+space or time may merge. The links come from \code{truth$position} (see below); the tree
+is cut at the true number of classes, or 3. Returns that number \code{k}, the ARI with
+the true classes (\code{ari_true_k}, the same gap-free metric as for k-means) and the
+Rand index between the constrained partition and the k-means partition with the
+same \code{k} (\code{rand_kmeans}). It is the reference method when the classes sought are
+regions or periods, which any decorrelation removes.
 }
 }
 \examples{
 set.seed(1)
 X <- rbind(matrix(rnorm(150, 0), 50), matrix(rnorm(150, 3), 50))
 run_downstream(X, "kmeans", truth = list(classes = rep(1:2, each = 50)))
+}
+\references{
+Legendre, P. & Legendre, L. (2012). \emph{Numerical Ecology}, 3rd ed.
+Elsevier, sections 12.6 and 13.3.
 }

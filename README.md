@@ -322,6 +322,10 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
   basis per variable, or whitening in time, keeps the classes.
 - **Classes that are contiguous in space or time are removed by design.** There the
   classes are the large-scale structure. Keeping only the broad scales preserves them.
+  So when the classes sought are regions or periods, the data should not be
+  decorrelated: the reference tool is clustering constrained by spatial or temporal
+  contiguity (Legendre & Legendre 2012, sections 12.6 and 13.3), available as
+  `run_downstream(X, "constrained", truth = list(position = ...))`.
 
 ## 11. Reproducibility
 

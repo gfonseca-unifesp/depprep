@@ -40,3 +40,49 @@ test_that("MDS: Procrustes correlation is 1 for the true signal and stress is sm
   expect_identical(unique(mg$method), "mds_gower")
   expect_gt(mg$value[mg$metric == "procrustes_truth"], 0.8)
 })
+
+test_that("constrained clustering recovers contiguous classes in space, time and space-time", {
+  set.seed(4)
+  xy <- matrix(stats::runif(150 * 2), 150)
+  cls <- cut(xy[, 1], c(0, 1 / 3, 2 / 3, 1), labels = FALSE)  # three vertical bands
+  X <- matrix(stats::rnorm(150 * 4), 150) + 2 * cls
+  cs <- run_downstream(X, "constrained", truth = list(classes = cls, position = xy), seed = 1)
+  expect_identical(cs$metric, c("k", "ari_true_k", "rand_kmeans"))
+  expect_equal(cs$value[cs$metric == "k"], 3)
+  expect_gt(cs$value[cs$metric == "ari_true_k"], 0.8)
+  expect_true(cs$value[cs$metric == "rand_kmeans"] >= 0 && cs$value[cs$metric == "rand_kmeans"] <= 1)
+  expect_identical(run_downstream(X, "constrained", truth = list(classes = cls, position = xy), seed = 1), cs)
+
+  tt <- sample(200)                                            # rows out of time order
+  cls_t <- cut(tt, c(0, 70, 130, 200), labels = FALSE)         # three periods
+  Xt <- matrix(stats::rnorm(200 * 3), 200) + 1.5 * cls_t
+  ct <- run_downstream(Xt, "constrained", truth = list(classes = cls_t, position = matrix(tt)), seed = 2)
+  expect_gt(ct$value[ct$metric == "ari_true_k"], 0.8)
+
+  sites <- matrix(stats::runif(30 * 2), 30)
+  pos <- cbind(sites[rep(1:30, 8), ], rep(1:8, each = 30))
+  cls_st <- ifelse(pos[, 1] < 0.5, 1, 2)                       # two regions, fixed in time
+  Xst <- matrix(stats::rnorm(240 * 3), 240) + 2 * cls_st
+  cst <- run_downstream(Xst, "constrained", truth = list(classes = cls_st, position = pos), seed = 3)
+  expect_gt(cst$value[cst$metric == "ari_true_k"], 0.8)
+
+  noclass <- run_downstream(X, "constrained", truth = list(position = xy), seed = 1)
+  expect_equal(noclass$value[noclass$metric == "k"], 3)
+  expect_true(is.na(noclass$value[noclass$metric == "ari_true_k"]))
+  expect_error(run_downstream(X, "constrained", truth = list(classes = cls)), "position")
+})
+
+test_that("contiguity links connect the graph and the Rand index is correct", {
+  set.seed(5)
+  xy <- rbind(matrix(stats::runif(20 * 2), 20), matrix(stats::runif(20 * 2) + 10, 20))  # two far clusters
+  e <- depprep:::.contiguity_links(xy)
+  expect_equal(depprep:::.n_components(40, e), 1)
+  expect_true(all(e[, 1] < e[, 2]))
+  et <- depprep:::.contiguity_links(matrix(c(3, 1, 2)))
+  expect_equal(et[order(et[, 1]), , drop = FALSE], rbind(c(1, 3), c(2, 3)))
+  pos <- cbind(rep(c(0, 1), 3), 0, rep(1:3, each = 2))         # 2 sites x 3 times
+  est <- depprep:::.contiguity_links(pos)
+  expect_equal(nrow(est), 3 + 4)                                 # 1 space link per time + 2 time links per site
+  expect_equal(depprep:::.rand_index(c(1, 1, 2, 2), c(2, 2, 1, 1)), 1)
+  expect_equal(depprep:::.rand_index(c(1, 1, 2, 2), c(1, 2, 1, 2)), 2 / 6)
+})
