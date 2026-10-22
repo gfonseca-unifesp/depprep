@@ -146,7 +146,7 @@ saveRDS(all, file.path("results", "correction_replicates.rds"))
 num_cols <- c("rms", "rms_vs_R_true", "within_group", "across_groups", "involving_none", "capture", "kn_mean",
               "autocor_after", "n_groups", "seconds")
 summ <- aggregate(all[num_cols], all[c("scenario", "label", "family", "smoothness", "approach")],
-                  function(x) mean(x, na.rm = TRUE), na.action = na.pass)
+                  function(x) mean(x, na.rm = TRUE))
 summ <- summ[order(summ$scenario, match(summ$approach, c("none", "independent", "global", "groups", "groups_split",
                                                          "type_split", "oracle_groups", "whiten"))), ]
 write.csv(summ, file.path("results", "correction_summary.csv"), row.names = FALSE)
