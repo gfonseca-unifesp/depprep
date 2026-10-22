@@ -2,9 +2,9 @@
 
 **Dependence-aware preprocessing for multivariate exploratory analysis.**
 
-> **Status:** early development — stages 0 to 4 are complete (simulation generators, the
-> diagnosis of each variable, grouping and shared bases); stage 5 (the correction) is
-> implemented and in validation. Do not use the package on real data yet.
+> **Status:** early development — stages 0 to 5 are complete (simulation generators, the
+> diagnosis of each variable, grouping and shared bases, the correction); stage 6 (pilot
+> with PCA, MDS, k-means and SOM) is in progress. Do not use the package on real data yet.
 
 ---
 
@@ -82,8 +82,8 @@ from recorded seeds into `results/` on your machine.
 | 2 | Can we simulate data with known truth? | `R/sim_*.R`, `analysis/02_*`, `02b_*` | done |
 | 3 | Diagnose each variable's dependence | `R/diagnose*.R`, `R/classify.R`, `analysis/03_*` | done |
 | 4 | Group regimes and build shared bases | `R/group.R`, `R/basis.R`, `analysis/04_*` | done |
-| 5 | Correct, and measure the mechanism (H2a, H2b) | `R/correct.R`, `R/verify.R`, `analysis/05*` | in validation |
-| 6 | Pilot with PCA, MDS, k-means and SOM | — | planned |
+| 5 | Correct, and measure the mechanism (H2a, H2b) | `R/correct.R`, `R/verify.R`, `analysis/05*` | done |
+| 6 | Pilot with PCA, MDS, k-means and SOM | — | in progress |
 | 7 | Full simulations | — | planned |
 
 ### Stage 1 — real-data case study (Foz do Amazonas)
