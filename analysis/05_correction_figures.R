@@ -11,6 +11,9 @@
 #   corr_grid_error.png    error of the residual correlations by approach and scenario (05b)
 #   corr_grid_pairs.png    the same by kind of pair (05b)
 #   corr_grid_capture.png  capture against degrees of freedom by approach (05b)
+#   corr_grid_vs_independent.png  paired difference of each approach from "one basis per
+#                          variable", replicate by replicate, with +- 2 standard errors (05b)
+# and results/correction_vs_independent.csv
 
 suppressMessages({
   devtools::load_all(quiet = TRUE)
@@ -148,5 +151,29 @@ if (file.exists(f_grid)) {
     labs(title = "What each approach removes (capture of the true large scale) and what it costs (k/n)",
          x = "mean k/n of the bases applied", y = "capture") + theme(legend.position = "bottom")
   save_fig(p, "corr_grid_capture.png", 11, 4.5)
+
+  # paired differences from "one basis per variable" (same data in every replicate)
+  reps <- readRDS(file.path("results", "correction_replicates.rds"))
+  w <- reshape(reps[, c("scenario", "label", "family", "replicate", "approach", "rms")],
+               idvar = c("scenario", "label", "family", "replicate"), timevar = "approach", direction = "wide")
+  names(w) <- sub("rms.", "", names(w), fixed = TRUE)
+  others <- c("global", "groups", "groups_split", "type_split", "oracle_groups", "whiten")
+  vs <- do.call(rbind, lapply(split(w, w$scenario), function(d) do.call(rbind, lapply(others, function(ap) {
+    x <- d[[ap]] - d$independent
+    data.frame(scenario = d$scenario[1], label = d$label[1], family = d$family[1], approach = ap, n_rep = nrow(d),
+               diff = mean(x), se = stats::sd(x) / sqrt(length(x)), rel = mean(x) / mean(d$independent))
+  }))))
+  write.csv(vs, file.path("results", "correction_vs_independent.csv"), row.names = FALSE)
+  vs$label <- factor(vs$label, rev(levels(g$label)))
+  vs$approach <- factor(vs$approach, others)
+  p <- ggplot(vs[vs$approach != "whiten", ], aes(diff, label)) + geom_vline(xintercept = 0, colour = "grey50") +
+    geom_errorbarh(aes(xmin = diff - 2 * se, xmax = diff + 2 * se), height = 0, colour = pal[["grey"]]) +
+    geom_point(aes(colour = diff < 0), size = 1.8) + facet_wrap(~ approach, nrow = 1) +
+    scale_colour_manual(values = c(`TRUE` = pal[["teal"]], `FALSE` = pal[["brown"]]), labels = c(`TRUE` = "smaller error", `FALSE` = "larger error"),
+                        name = "than one basis per variable") +
+    labs(title = "Each approach minus 'one basis per variable' (error of the residual correlations; same data, replicate by replicate)",
+         subtitle = "Points: mean difference; bars: +- 2 standard errors. Whitening is left out (differences up to -0.07 in space-time, +0.03 elsewhere)",
+         x = "difference in RMS error (negative = better)", y = NULL) + theme(legend.position = "bottom")
+  save_fig(p, "corr_grid_vs_independent.png", 13, 5.5)
 }
 message("Figures written to ", fig_dir)
