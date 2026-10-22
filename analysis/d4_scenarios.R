@@ -72,11 +72,31 @@ truth_table <- function(groups) {
   }))
 }
 
-simulate <- function(sc, seed) {
+# `truth` (stage 6 pilot): "null" (default: identity R_true, no classes, the D4 data),
+# "structured" (R_true in blocks, 0.5 within groups, 0 between; 3 random classes) or
+# "contiguous" (the same with 3 classes contiguous in space or time).
+simulate <- function(sc, seed, truth = "null") {
   sm <- if (is.null(sc$smoothness)) 0.5 else sc$smoothness
+  g <- switch(sc$family,
+    spatial = spatial_groups(if (sc$heterogeneity == "high") 0.1 else 0.25, sm),
+    fields = fields_groups(sm),
+    temporal = temporal_groups(if (sc$heterogeneity == "high") 0.3 else 0.6),
+    spatiotemporal = st_groups(sm))
+  R_true <- if (truth == "null") NULL else make_R_true(g, "blocks", within = 0.5, between = 0)
+  classes <- switch(truth, null = NULL, structured = list(k = 3, type = "random", effect = 1),
+                    contiguous = list(k = 3, type = "contiguous", effect = 1))
   switch(sc$family,
-    spatial = sim_spatial(sc$n, spatial_groups(if (sc$heterogeneity == "high") 0.1 else 0.25, sm), seed = seed),
-    fields = sim_spatial(sc$n, fields_groups(sm), seed = seed),
-    temporal = sim_temporal(sc$n_times, temporal_groups(if (sc$heterogeneity == "high") 0.3 else 0.6), seed = seed),
-    spatiotemporal = sim_spatiotemporal(sc$n, sc$n_times, st_groups(sm), seed = seed))
+    spatial = , fields = sim_spatial(sc$n, g, R_true = R_true, classes = classes, seed = seed),
+    temporal = sim_temporal(sc$n_times, g, R_true = R_true, classes = classes, seed = seed),
+    spatiotemporal = sim_spatiotemporal(sc$n, sc$n_times, g, R_true = R_true, classes = classes, seed = seed))
 }
+
+# Stage 6 pilot: the largest affordable size of each family, in three truths.
+pilot_scenarios <- merge(rbind(scenarios[scenarios$label %in% c("S n=400 high", "T T=480 high", "ST 50x60"), ],
+                               extra_scenarios[extra_scenarios$label == "S n=400 high smooth", ]),
+                         data.frame(truth = c("null", "structured", "contiguous"), stringsAsFactors = FALSE))
+pilot_scenarios <- pilot_scenarios[order(match(pilot_scenarios$family, c("spatial", "temporal", "spatiotemporal")),
+                                         pilot_scenarios$smoothness, match(pilot_scenarios$truth, c("null", "structured", "contiguous"))), ]
+pilot_scenarios$base_id <- pilot_scenarios$id
+pilot_scenarios$id <- seq_len(nrow(pilot_scenarios))
+pilot_scenarios$label <- paste(pilot_scenarios$label, pilot_scenarios$truth)
