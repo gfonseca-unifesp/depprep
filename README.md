@@ -3,8 +3,8 @@
 **Dependence-aware preprocessing for multivariate exploratory analysis.**
 
 > **Status:** early development — stages 0 to 4 are complete (simulation generators, the
-> diagnosis of each variable, grouping and shared bases); stage 5 (the correction) is in
-> progress. Do not use the package on real data yet.
+> diagnosis of each variable, grouping and shared bases); stage 5 (the correction) is
+> implemented and in validation. Do not use the package on real data yet.
 
 ---
 
@@ -82,7 +82,7 @@ from recorded seeds into `results/` on your machine.
 | 2 | Can we simulate data with known truth? | `R/sim_*.R`, `analysis/02_*`, `02b_*` | done |
 | 3 | Diagnose each variable's dependence | `R/diagnose*.R`, `R/classify.R`, `analysis/03_*` | done |
 | 4 | Group regimes and build shared bases | `R/group.R`, `R/basis.R`, `analysis/04_*` | done |
-| 5 | Correct, and show that shared bases avoid the distortion | — | in progress |
+| 5 | Correct, and measure the mechanism (H2a, H2b) | `R/correct.R`, `R/verify.R`, `analysis/05*` | in validation |
 | 6 | Pilot with PCA, MDS, k-means and SOM | — | planned |
 | 7 | Full simulations | — | planned |
 
@@ -121,6 +121,15 @@ add spatial autocorrelation that belongs to the interpolation, not to the proces
 | `analysis/d4_scenarios.R` | The simulation grid (groups, scenarios, truth, one replicate), shared by the stage scripts |
 | `analysis/04_grouping.R` | Grouping of the stage 3 signatures (hclust and mclust, 200 replicates per scenario), stability over subsamples, and one basis per group with the estimated and the true grouping: k/n, capture of the true large-scale structure and absorption of the true residual |
 | `analysis/04_grouping_figures.R` | Scheme, didactic Moran eigenvector maps, one replicate step by step, agreement with the true groups, stability, degrees of freedom and the k/n threshold curves |
+
+### Stage 5 — correction and the mechanism
+
+| Script | What it produces |
+| --- | --- |
+| `analysis/05a_h2_mechanism.R` | H2a: the error of using different bases against the distance between them (and its theory); H2b: the shared structure a basis leaves behind, by roughness of the shared field and group size; the calibration of the second grouping level |
+| `analysis/05b_correction.R` | The correction on the grid (D4 plus smooth fields and "same regime, different fields"): eight approaches, from no correction to the true grouping, with the error of the residual correlations, capture, degrees of freedom and time |
+| `analysis/05c_whitening_st.R` | Why whitening helps in space-time: its spatial and temporal parts, by kind of shared process |
+| `analysis/05_correction_figures.R` | The didactic scheme, example correlation matrices, and the figures of the three scripts |
 
 ## 5. Getting started
 
@@ -228,7 +237,28 @@ temporal eigenvectors in time, and their products in space-time — with permuta
 and a cap on the share of degrees of freedom (`kn_max`). `union_basis()` joins the bases
 of two groups for the pairs of variables across them.
 
-## 9. Known limits: why purely spatial regimes are hard to tell apart
+## 9. Quick start: correcting and verifying
+
+```r
+gr <- group_regimes(diagnose_variables(sim))
+cr <- correct(sim, gr)                     # one basis per group, unions across groups
+cr$R                                       # corrected correlation matrix (for PCA)
+head(cr$X)                                 # corrected data (for k-means, SOM, MDS)
+verify(cr, sim)                            # what was removed and what was kept
+correct(sim, gr, mode = "whiten")          # whitening, the better choice in space-time
+```
+
+`correct()` has three modes: `"conditional"` (residuals on the group bases),
+`"whiten"` (the observations are whitened with each group's estimated covariance) and
+`"scale"` (one correlation matrix per band of scales). What the simulations show so far:
+the error of using different bases for two variables is real but small (of order
+rho k/n); the larger error is the part of a shared large-scale process that no basis
+captures, which grows with the roughness of that process. A correction cannot always
+remove it: at scales finer than the basis, a shared process and a genuine association
+leave the same trace. In space-time, observation over time separates them better, and
+whitening reduces the error substantially.
+
+## 10. Known limits: why purely spatial regimes are hard to tell apart
 
 In the simulations the diagnosis and the grouping work well in time and in space-time,
 but much less well for purely spatial data with up to a few hundred sites. The reasons
@@ -260,7 +290,7 @@ as ambiguous (unstable over subsamples) instead of hiding the problem; and data 
 repeatedly in time (space-time) carry much more information about each spatial regime
 than a single map. Results: `analysis/03_*` and `analysis/04_*`.
 
-## 10. Reproducibility
+## 11. Reproducibility
 
 - **Seeds.** Every simulation uses an explicit seed, stored in its output. The generators
   use the L'Ecuyer-CMRG generator with one independent stream per component (coordinates,
@@ -273,6 +303,6 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
   moving pattern, and more.
 - **Package versions.** `renv.lock` pins every package.
 
-## 11. License
+## 12. License
 
 MIT — see `LICENSE.md`.
