@@ -51,3 +51,24 @@ test_that("residual components recover R_true", {
   reps <- lapply(1:50, function(i) stats::cor(sim_temporal(480, g, R_true = r, seed = i)$components$residual))
   expect_lt(max(abs(Reduce(`+`, reps) / 50 - r)), 0.05)
 })
+
+test_that("the seasonal_trend regime recovers its period and strength", {
+  g <- sim_groups(sim_group("st", 2, "seasonal_trend", period = 12, strength = 1.5),
+                  sim_group("none", 1, "none"))
+  expect_error(sim_temporal(60, sim_groups(sim_group("s", 1, "seasonal_trend")), seed = 1), "needs `period`")
+  for (n_times in c(480, 100)) {   # 100: the period falls between Fourier frequencies
+    est <- t(vapply(1:20, function(i) {
+      L <- sim_temporal(n_times, g, seed = 400 + i)$components$large[, "st_1"]
+      t <- seq_len(n_times)
+      h <- cbind(sin(2 * pi * t / 12), cos(2 * pi * t / 12))
+      fit <- stats::lm(L ~ t + h)
+      cf <- stats::coef(fit)
+      sp <- stats::spec.pgram(stats::residuals(stats::lm(L ~ t)), taper = 0, pad = 9, plot = FALSE)
+      c(max(abs(stats::residuals(fit))), stats::sd(cf["t"] * t) / stats::sd(h %*% cf[3:4]),
+        1 / sp$freq[which.max(sp$spec)])
+    }, numeric(3)))
+    expect_lt(max(est[, 1]), 1e-10)
+    expect_lt(max(abs(est[, 2] - 1.5)), 0.03)
+    expect_lt(max(abs(est[, 3] - 12)), 0.25)
+  }
+})

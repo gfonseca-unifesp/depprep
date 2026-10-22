@@ -11,6 +11,9 @@
 #' * `"trend_shift"`: linear trend with a jump, standardised; parameters `slope`
 #'   (default 1), `jump` (default 1) and `shift_at` (fraction of the series where
 #'   the jump happens, default 0.5).
+#' * `"seasonal_trend"`: harmonic plus linear trend, standardised; parameters
+#'   `period`, `phase` (random when omitted) and `strength` (standard deviation of
+#'   the trend relative to that of the harmonic, default 1).
 #' * `"none"`: no large-scale component.
 #'
 #' @inheritParams sim_spatial
@@ -27,7 +30,7 @@
 #' @export
 sim_temporal <- function(n_times, groups, R_true = NULL, classes = NULL, seed) {
   stopifnot(inherits(groups, "depprep_groups"), !missing(seed), n_times >= 2)
-  .check_regime(groups, c("ar1", "seasonal", "trend_shift", "none"))
+  .check_regime(groups, c("ar1", "seasonal", "trend_shift", "seasonal_trend", "none"))
   R_true <- .check_R(R_true, groups)
 
   fields <- .with_stream(seed, .streams[["large"]], {
@@ -48,6 +51,11 @@ sim_temporal <- function(n_times, groups, R_true = NULL, classes = NULL, seed) {
         trend_shift = {
           p <- utils::modifyList(list(slope = 1, jump = 1, shift_at = 0.5), p)
           .trend_shift(n_times, p$slope, p$jump, p$shift_at)
+        },
+        seasonal_trend = {
+          if (is.null(p$period)) stop("Group '", g$name, "' needs `period`.", call. = FALSE)
+          phase <- if (is.null(p$phase)) stats::runif(1, 0, 2 * pi) else p$phase
+          .seasonal_trend(n_times, p$period, phase, if (is.null(p$strength)) 1 else p$strength)
         })
     }
     out

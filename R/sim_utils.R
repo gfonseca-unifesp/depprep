@@ -120,6 +120,29 @@
   as.vector(scale(f))
 }
 
+# Harmonic plus linear trend, standardised. `strength` is the standard deviation of
+# the trend relative to that of the harmonic (1: equal variances).
+.seasonal_trend <- function(n_times, period, phase = 0, strength = 1) {
+  t <- seq_len(n_times)
+  as.vector(scale(.seasonal(n_times, period, phase) + strength * as.vector(scale(t))))
+}
+
+# Deterministic surface along `direction` (degrees from the x axis): the coordinate
+# projected on that direction from the centre of the sites' bounding box ("linear") or
+# its square ("quadratic", a trough across the direction), standardised over the
+# sites. With a unit-variance `field`, the sum is rescaled to unit variance and
+# `strength` is the standard deviation of the surface relative to that of the field.
+.gradient <- function(coords, direction = 0, shape = "linear", strength = 1, field = NULL) {
+  th <- direction * pi / 180
+  ctr <- apply(coords, 2, function(v) mean(range(v)))
+  d <- (coords[, 1] - ctr[1]) * cos(th) + (coords[, 2] - ctr[2]) * sin(th)
+  s <- switch(shape, linear = d, quadratic = d^2,
+              stop("`shape` must be \"linear\" or \"quadratic\".", call. = FALSE))
+  s <- as.vector(scale(s))
+  if (is.null(field)) return(s)
+  (strength * s + field) / sqrt(strength^2 + 1)
+}
+
 # Residual components: n_obs x p, rows independent, columns with correlation R.
 .residual_mvn <- function(n_obs, R) {
   u <- tryCatch(chol(R), error = function(e) {
@@ -211,22 +234,31 @@ sim_groups <- function(...) {
 #'
 #' @param groups Groups created with [sim_groups()].
 #' @param type `"identity"` (no association between residual components, the null
-#'   structure) or `"blocks"` (constant correlation within and between groups).
-#' @param within Correlation between variables of the same group (`"blocks"`).
-#' @param between Correlation between variables of different groups (`"blocks"`).
+#'   structure), `"blocks"` (constant correlation within and between groups) or
+#'   `"crossed"` (constant correlation within and between blocks that cross the
+#'   groups: the variables of every group are dealt in turn to the `n_blocks`
+#'   blocks, so each block holds variables of every group).
+#' @param within Correlation between variables of the same group (`"blocks"`) or
+#'   block (`"crossed"`).
+#' @param between Correlation between variables of different groups (`"blocks"`) or
+#'   blocks (`"crossed"`).
+#' @param n_blocks Number of blocks for `"crossed"`.
 #' @return A p x p positive definite correlation matrix with variable names.
 #' @examples
 #' g <- sim_groups(sim_group("a", 2, "none"), sim_group("b", 2, "none"))
 #' make_R_true(g, "blocks", within = 0.5, between = 0.2)
+#' make_R_true(g, "crossed", within = 0.5, between = 0)
 #' @export
-make_R_true <- function(groups, type = c("identity", "blocks"), within = 0.5, between = 0.2) {
+make_R_true <- function(groups, type = c("identity", "blocks", "crossed"), within = 0.5, between = 0.2,
+                        n_blocks = 2) {
   stopifnot(inherits(groups, "depprep_groups"))
   type <- match.arg(type)
   vg <- attr(groups, "var_group")
   p <- length(vg)
   r <- diag(p)
-  if (type == "blocks") {
-    r <- ifelse(outer(vg, vg, "=="), within, between)
+  if (type != "identity") {
+    b <- if (type == "blocks") vg else .crossed_blocks(vg, n_blocks)
+    r <- ifelse(outer(b, b, "=="), within, between)
     diag(r) <- 1
   }
   if (min(eigen(r, symmetric = TRUE, only.values = TRUE)$values) <= 1e-8) {
@@ -234,6 +266,14 @@ make_R_true <- function(groups, type = c("identity", "blocks"), within = 0.5, be
   }
   dimnames(r) <- list(attr(groups, "var_names"), attr(groups, "var_names"))
   r
+}
+
+# Blocks that cross the groups: the i-th variable of every group goes to block
+# ((i - 1) mod n_blocks) + 1.
+.crossed_blocks <- function(var_group, n_blocks) {
+  stopifnot(n_blocks >= 2, n_blocks == round(n_blocks))
+  pos <- stats::ave(seq_along(var_group), var_group, FUN = seq_along)
+  as.integer((pos - 1) %% n_blocks + 1)
 }
 
 .check_R <- function(R_true, groups) {

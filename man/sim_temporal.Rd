@@ -37,6 +37,9 @@ Regimes for \code{\link[=sim_group]{sim_group()}}:
 \item \code{"trend_shift"}: linear trend with a jump, standardised; parameters \code{slope}
 (default 1), \code{jump} (default 1) and \code{shift_at} (fraction of the series where
 the jump happens, default 0.5).
+\item \code{"seasonal_trend"}: harmonic plus linear trend, standardised; parameters
+\code{period}, \code{phase} (random when omitted) and \code{strength} (standard deviation of
+the trend relative to that of the harmonic, default 1).
 \item \code{"none"}: no large-scale component.
 }
 }

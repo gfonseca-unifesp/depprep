@@ -6,20 +6,28 @@
 \usage{
 make_R_true(
   groups,
-  type = c("identity", "blocks"),
+  type = c("identity", "blocks", "crossed"),
   within = 0.5,
-  between = 0.2
+  between = 0.2,
+  n_blocks = 2
 )
 }
 \arguments{
 \item{groups}{Groups created with \code{\link[=sim_groups]{sim_groups()}}.}
 
 \item{type}{\code{"identity"} (no association between residual components, the null
-structure) or \code{"blocks"} (constant correlation within and between groups).}
+structure), \code{"blocks"} (constant correlation within and between groups) or
+\code{"crossed"} (constant correlation within and between blocks that cross the
+groups: the variables of every group are dealt in turn to the \code{n_blocks}
+blocks, so each block holds variables of every group).}
 
-\item{within}{Correlation between variables of the same group (\code{"blocks"}).}
+\item{within}{Correlation between variables of the same group (\code{"blocks"}) or
+block (\code{"crossed"}).}
 
-\item{between}{Correlation between variables of different groups (\code{"blocks"}).}
+\item{between}{Correlation between variables of different groups (\code{"blocks"}) or
+blocks (\code{"crossed"}).}
+
+\item{n_blocks}{Number of blocks for \code{"crossed"}.}
 }
 \value{
 A p x p positive definite correlation matrix with variable names.
@@ -30,4 +38,5 @@ Correlation matrix of the residual components
 \examples{
 g <- sim_groups(sim_group("a", 2, "none"), sim_group("b", 2, "none"))
 make_R_true(g, "blocks", within = 0.5, between = 0.2)
+make_R_true(g, "crossed", within = 0.5, between = 0)
 }

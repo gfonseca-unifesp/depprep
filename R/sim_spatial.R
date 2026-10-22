@@ -14,6 +14,14 @@
 #'   `smoothness` (0.5, 1.5 or 2.5; default 2.5). The exponential is the Matern with
 #'   smoothness 0.5: a rough field, with much variance at small scales; larger values
 #'   give smoother fields with the same practical range.
+#' * `"gradient"`: a deterministic surface in the coordinates, standardised over the
+#'   sites, optionally plus a stationary field. Parameters `direction` (degrees from
+#'   the x axis, default 0), `shape` (`"linear"`, default, a plane rising along
+#'   `direction`; or `"quadratic"`, the square of that coordinate, a trough across
+#'   `direction`) and, for the field, `range` (no field when omitted), `smoothness`
+#'   (default 0.5), `anisotropy` and `angle` as above. With a field, `strength`
+#'   (default 1) is the standard deviation of the surface relative to that of the
+#'   field, and the sum is rescaled to unit variance.
 #' * `"none"`: no large-scale component.
 #'
 #' @param n Number of sites (ignored when `coords` is given).
@@ -37,7 +45,7 @@
 #' @export
 sim_spatial <- function(n, groups, R_true = NULL, coords = NULL, classes = NULL, seed) {
   stopifnot(inherits(groups, "depprep_groups"), !missing(seed))
-  .check_regime(groups, c("exponential", "matern", "none"))
+  .check_regime(groups, c("exponential", "matern", "gradient", "none"))
   R_true <- .check_R(R_true, groups)
   if (is.null(coords)) {
     coords <- .with_stream(seed, .streams[["coords"]], matrix(stats::runif(2 * n), ncol = 2))
@@ -52,6 +60,12 @@ sim_spatial <- function(n, groups, R_true = NULL, coords = NULL, classes = NULL,
       if (!is.null(g$shared_with) || g$regime == "none") next
       p <- utils::modifyList(list(anisotropy = 1, angle = 0, smoothness = if (g$regime == "matern") 2.5 else 0.5),
                              g$params)
+      if (g$regime == "gradient") {
+        p <- utils::modifyList(list(direction = 0, shape = "linear", strength = 1), p)
+        field <- if (!is.null(p$range)) as.vector(.grf_chol(coords, p$range, p$anisotropy, p$angle, smoothness = p$smoothness))
+        out[[g$name]] <- .gradient(coords, p$direction, p$shape, p$strength, field)
+        next
+      }
       if (is.null(p$range)) stop("Group '", g$name, "' needs `range`.", call. = FALSE)
       out[[g$name]] <- as.vector(.grf_chol(coords, p$range, p$anisotropy, p$angle, smoothness = p$smoothness))
     }

@@ -87,3 +87,40 @@ test_that("variogram range of the simulated fields matches the simulated range",
     expect_lt(abs(mean(est) / rng - 1), 0.25)
   }
 })
+
+test_that("the gradient regime is the specified surface, exactly without a field", {
+  g <- sim_groups(sim_group("plane", 2, "gradient", direction = 30),
+                  sim_group("bowl", 1, "gradient", direction = 0, shape = "quadratic"),
+                  sim_group("none", 1, "none"))
+  s <- sim_spatial(100, g, seed = 6)
+  L <- s$components$large
+  expect_equal(L[, "plane_1"], L[, "plane_2"])
+  fit <- stats::lm(L[, "plane_1"] ~ s$coords)
+  expect_lt(max(abs(stats::residuals(fit))), 1e-10)
+  b <- stats::coef(fit)[-1]
+  expect_equal(atan2(b[2], b[1]) * 180 / pi, 30, ignore_attr = TRUE)
+  expect_equal(c(mean(L[, "bowl_1"]), stats::sd(L[, "bowl_1"])), c(0, 1), tolerance = 1e-12)
+  expect_equal(stats::cor(L[, "bowl_1"], (s$coords[, "x"] - mean(range(s$coords[, "x"])))^2), 1)
+})
+
+test_that("a gradient plus a field recovers direction, strength and the field's range", {
+  skip_on_cran()
+  # mean of 50 replicates: direction within 5 degrees, strength within 15% and the
+  # variogram range of the detrended component within 25% (protocol, section 7)
+  g <- sim_groups(sim_group("grad", 1, "gradient", direction = 60, strength = 1, range = 0.25,
+                            large_scale_share = 1))
+  est <- t(vapply(1:50, function(i) {
+    s <- sim_spatial(400, g, seed = 300 + i)
+    d <- data.frame(s$coords, z = s$components$large[, 1])
+    fit <- stats::lm(z ~ x + y, d)
+    b <- stats::coef(fit)[c("x", "y")]
+    d$r <- stats::residuals(fit)
+    v <- gstat::variogram(r ~ 1, locations = ~ x + y, data = d, cutoff = 0.5)
+    vf <- suppressWarnings(gstat::fit.variogram(v, gstat::vgm(1, "Exp", 0.25 / 3)))
+    c(atan2(b[2], b[1]) * 180 / pi, stats::sd(stats::fitted(fit)) / stats::sd(d$r), 3 * vf$range[nrow(vf)])
+  }, numeric(3)))
+  m <- colMeans(est)
+  expect_lt(abs(m[1] - 60), 5)
+  expect_lt(abs(m[2] - 1), 0.15)
+  expect_lt(abs(m[3] / 0.25 - 1), 0.25)
+})

@@ -44,6 +44,14 @@ default 0).
 \code{smoothness} (0.5, 1.5 or 2.5; default 2.5). The exponential is the Matern with
 smoothness 0.5: a rough field, with much variance at small scales; larger values
 give smoother fields with the same practical range.
+\item \code{"gradient"}: a deterministic surface in the coordinates, standardised over the
+sites, optionally plus a stationary field. Parameters \code{direction} (degrees from
+the x axis, default 0), \code{shape} (\code{"linear"}, default, a plane rising along
+\code{direction}; or \code{"quadratic"}, the square of that coordinate, a trough across
+\code{direction}) and, for the field, \code{range} (no field when omitted), \code{smoothness}
+(default 0.5), \code{anisotropy} and \code{angle} as above. With a field, \code{strength}
+(default 1) is the standard deviation of the surface relative to that of the
+field, and the sum is rescaled to unit variance.
 \item \code{"none"}: no large-scale component.
 }
 }
