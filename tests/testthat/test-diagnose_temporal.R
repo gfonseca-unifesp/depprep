@@ -20,6 +20,26 @@ test_that(".temporal_stats finds the seasonal period and the trend", {
   expect_lt(ar[["trend_r2"]], 0.1)
 })
 
+test_that(".temporal_stats finds a period off the Fourier grid and accepts a known period", {
+  x <- 2 * sin(2 * pi * (1:100) / 12.5) + depprep:::.with_stream(3, 1, stats::rnorm(100))
+  expect_lt(abs(depprep:::.temporal_stats(x)[["period"]] - 12.5), 0.2)
+  expect_equal(depprep:::.temporal_stats(x, period = 12)[["period"]], 12)
+})
+
+test_that(".temporal_stats measures persistence after removing trend and cycle", {
+  e <- depprep:::.with_stream(5, 1, as.numeric(stats::arima.sim(list(ar = 0.5), 480)))
+  y <- 1.5 * sin(2 * pi * (1:480) / 12) + 0.01 * (1:480) + e
+  s <- depprep:::.temporal_stats(y)
+  expect_lt(abs(s[["period"]] - 12), 0.1)
+  expect_lt(abs(s[["phi"]] - 0.5), 0.15)      # the trend does not push phi towards 1
+  expect_gt(s[["trend_r2"]], 0.4)             # the trend is seen through the cycle
+})
+
+test_that("the period test rarely flags white noise", {
+  p <- vapply(1:100, function(i) depprep:::.temporal_stats(depprep:::.with_stream(i, 1, stats::rnorm(120)))[["period_p"]], 0)
+  expect_lt(mean(p < 0.05), 0.12)
+})
+
 test_that("Ljung-Box flags persistence and rarely flags white noise", {
   expect_lt(depprep:::.temporal_stats(tm_series("ar1", 9, phi = 0.9, share = 0.6))[["ljung_p"]], 0.001)
   p <- vapply(1:200, function(i) depprep:::.temporal_stats(depprep:::.with_stream(i, 1, stats::rnorm(120)))[["ljung_p"]], 0)

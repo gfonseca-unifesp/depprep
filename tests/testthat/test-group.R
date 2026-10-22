@@ -56,7 +56,9 @@ test_that("temporal and spatio-temporal grouping run and report periods", {
                   sim_group("none", 4, "none"))
   s <- sim_temporal(240, g, seed = 6)
   gr <- group_regimes(diagnose_variables(s), data = s, B = 4, seed = 1)
-  expect_gte(mclust::adjustedRandIndex(gr$group, s$group), 0.8)
+  # no estimated group mixes regimes (mclust may split a regime in two: stage 4, D6)
+  expect_true(all(tapply(s$group, gr$group, function(x) length(unique(x))) == 1))
+  expect_gte(mclust::adjustedRandIndex(gr$group, s$group), 0.6)
   seas_group <- gr$group[gr$group_type == "seasonal"][1]
   expect_equal(unname(attr(gr, "period")[seas_group]), 12)
   g2 <- sim_groups(sim_group("sep", 4, "separable_ar1", range = 0.5, phi = 0.9),

@@ -15,9 +15,14 @@
 #'   `"Sph"`), `nugget`, `sill`, `range` (practical range), `nugget_ratio`,
 #'   `aniso_ratio` and `aniso_direction` (directional variograms; gstat angle,
 #'   clockwise from north);
-#' * temporal: `acf1`, `phi` (AR(1) coefficient), `ar_order` (AIC), `ljung_p`,
-#'   `period` and `period_strength` (dominant seasonal period and its share of the
-#'   variance), `trend_r2`;
+#' * temporal (Legendre & Legendre 2012, ch. 12: trend and cycle are removed before
+#'   the persistence is measured): `acf1`, `phi` (AR(1) coefficient) and `ar_order`
+#'   (AIC) on the residuals of a linear trend and of the cycle (when significant);
+#'   `ljung_p` (Ljung-Box on the raw series, the dependence test); `period`,
+#'   `period_strength` and `period_p` (least-squares periodogram on a fine grid of
+#'   periods: the dominant period, the share of the detrended variance explained by
+#'   its sine-cosine pair, and a test against the local background spectrum); `trend_r2`
+#'   (partial R-squared of a linear trend given the cycle);
 #' * spatio-temporal: the spatial statistics on time slices, the temporal ones on
 #'   sites, `shift_indicator` and `shift_direction` (a pattern that moves);
 #' * with `B > 0`: parametric bootstrap of `range` (spatial) and `phi` (temporal):
@@ -36,6 +41,8 @@
 #'   which is optimistic in small samples).
 #' @param perm_seed Seed of the permutations; each variable gets its own stream, so a
 #'   signature does not depend on the other variables and is reproducible.
+#' @param period Known seasonal period (in time steps) of the temporal and
+#'   spatio-temporal families; `NULL` searches it in the data.
 #' @return A data frame of class `depprep_signature`, one row per variable.
 #' @examples
 #' g <- sim_groups(sim_group("long", 2, "exponential", range = 0.5),
@@ -44,7 +51,7 @@
 #' diagnose_variables(s)[, c("variable", "moran_p", "range", "nugget_ratio")]
 #' @export
 diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 0, seed = NULL, k = 8,
-                               nsim = 499, perm_seed = 1L) {
+                               nsim = 499, perm_seed = 1L, period = NULL) {
   if (inherits(X, "depprep_sim")) {
     sim <- X
     X <- sim$X
@@ -84,14 +91,15 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
                                                                       .boot_range(coords, f$fit, B)))
       }
     } else if (family == "temporal") {
-      ts <- .temporal_stats(z)
+      ts <- .temporal_stats(z, period = period)
       out[names(ts)] <- as.list(ts)
       if (B > 0) {
         out[c("phi_se", "phi_lo", "phi_hi")] <- as.list(.with_stream(seed + j, .streams[["bootstrap"]],
                                                                 .boot_phi(length(z), ts[["phi"]], B)))
       }
     } else {
-      st <- .with_stream(perm_seed + j, .streams[["permutation"]], .st_stats(z, coords, index, lw = lw, k = k, nsim = nsim))
+      st <- .with_stream(perm_seed + j, .streams[["permutation"]], .st_stats(z, coords, index, lw = lw, k = k, nsim = nsim,
+                                                                                 period = period))
       out[names(st)] <- as.list(st)
     }
     out$variable <- colnames(X)[j]
@@ -106,7 +114,7 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
 # One row with every signature column, all missing.
 .empty_signature <- function() {
   num <- c("moran_I", "moran_p", "nugget", "sill", "range", "nugget_ratio", "aniso_ratio", "aniso_direction",
-           "acf1", "phi", "ar_order", "ljung_p", "period", "period_strength", "trend_r2",
+           "acf1", "phi", "ar_order", "ljung_p", "period", "period_strength", "period_p", "trend_r2",
            "shift_indicator", "shift_direction",
            "range_se", "range_lo", "range_hi", "phi_se", "phi_lo", "phi_hi")
   c(list(variable = NA_character_, vario_model = NA_character_),

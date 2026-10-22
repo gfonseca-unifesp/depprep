@@ -13,7 +13,8 @@ diagnose_variables(
   seed = NULL,
   k = 8,
   nsim = 499,
-  perm_seed = 1L
+  perm_seed = 1L,
+  period = NULL
 )
 }
 \arguments{
@@ -37,6 +38,9 @@ which is optimistic in small samples).}
 
 \item{perm_seed}{Seed of the permutations; each variable gets its own stream, so a
 signature does not depend on the other variables and is reproducible.}
+
+\item{period}{Known seasonal period (in time steps) of the temporal and
+spatio-temporal families; \code{NULL} searches it in the data.}
 }
 \value{
 A data frame of class \code{depprep_signature}, one row per variable.
@@ -59,9 +63,14 @@ Columns of the result (\code{NA} when not applicable to the family):
 \code{"Sph"}), \code{nugget}, \code{sill}, \code{range} (practical range), \code{nugget_ratio},
 \code{aniso_ratio} and \code{aniso_direction} (directional variograms; gstat angle,
 clockwise from north);
-\item temporal: \code{acf1}, \code{phi} (AR(1) coefficient), \code{ar_order} (AIC), \code{ljung_p},
-\code{period} and \code{period_strength} (dominant seasonal period and its share of the
-variance), \code{trend_r2};
+\item temporal (Legendre & Legendre 2012, ch. 12: trend and cycle are removed before
+the persistence is measured): \code{acf1}, \code{phi} (AR(1) coefficient) and \code{ar_order}
+(AIC) on the residuals of a linear trend and of the cycle (when significant);
+\code{ljung_p} (Ljung-Box on the raw series, the dependence test); \code{period},
+\code{period_strength} and \code{period_p} (least-squares periodogram on a fine grid of
+periods: the dominant period, the share of the detrended variance explained by
+its sine-cosine pair, and a test against the local background spectrum); \code{trend_r2}
+(partial R-squared of a linear trend given the cycle);
 \item spatio-temporal: the spatial statistics on time slices, the temporal ones on
 sites, \code{shift_indicator} and \code{shift_direction} (a pattern that moves);
 \item with \code{B > 0}: parametric bootstrap of \code{range} (spatial) and \code{phi} (temporal):

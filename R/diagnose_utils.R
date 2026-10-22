@@ -94,25 +94,86 @@
 
 # --- Temporal --------------------------------------------------------------------------
 
-# Temporal statistics of one regular series. The seasonal period is searched among
-# periods up to a third of the series, so that slow persistence or trends (whose
-# peak sits at the lowest frequencies) are not read as seasonality.
-.temporal_stats <- function(x, max_order = 10) {
+# Temporal statistics of one regular series, following Legendre & Legendre (2012,
+# ch. 12): the trend and the cycle are removed before the persistence is measured.
+# 1. Period: least-squares periodogram (one sine-cosine pair fitted at each period of a
+#    fine grid, Dutilleul's approach) on the linearly detrended series, so periods off
+#    the Fourier grid (12.5 in 100 months, 52.18 weeks) are found. Periods up to a
+#    third of the series only, so slow persistence is not read as a cycle. With
+#    `period` given, the search is skipped. `period_strength` is the share of the
+#    detrended variance explained by that pair; `period_p` tests the peak against the
+#    local background spectrum (red noise has large low-frequency ordinates).
+# 2. Trend: `trend_r2` is the partial R-squared of a linear trend given the cycle
+#    (the cycle enters only when significant).
+# 3. Persistence: `acf1`, `phi` and `ar_order` on the residuals of trend and cycle.
+#    `ljung_p` stays on the raw series: it detects dependence of any kind.
+.temporal_stats <- function(x, max_order = 10, period = NULL, alpha = 0.05) {
   n <- length(x)
   x <- x - mean(x)
   t <- seq_len(n)
-  acf1 <- stats::acf(x, 1, plot = FALSE)$acf[2]
-  ar_order <- tryCatch(stats::ar(x, aic = TRUE, order.max = max_order, method = "yule-walker")$order,
-                       error = function(e) NA_integer_)
-  phi <- tryCatch(unname(stats::arima(x, order = c(1, 0, 0), include.mean = FALSE)$coef[1]),
-                  error = function(e) acf1)
   lb_p <- stats::Box.test(x, lag = min(10, floor(n / 5)), type = "Ljung-Box")$p.value
-  sp <- stats::spec.pgram(x, taper = 0, detrend = FALSE, demean = TRUE, fast = FALSE, plot = FALSE)
-  cand <- which(1 / sp$freq <= n / 3)
-  k <- cand[which.max(sp$spec[cand])]
-  c(acf1 = acf1, phi = phi, ar_order = ar_order, ljung_p = lb_p,
-    period = 1 / sp$freq[k], period_strength = sp$spec[k] / sum(sp$spec),
-    trend_r2 = summary(stats::lm(x ~ t))$r.squared)
+  tc <- t - mean(t)
+  xd <- x - tc * sum(tc * x) / sum(tc^2)                          # linear trend removed
+  pg <- .ls_periodogram(xd, t, period = period)
+  harm <- if (is.finite(pg$period) && (!is.null(period) || pg$p < alpha)) {
+    h <- seq_len(max(1, min(floor(pg$period / 2), 6)))
+    m <- do.call(cbind, lapply(h, function(i) cbind(sin(2 * pi * i * t / pg$period), cos(2 * pi * i * t / pg$period))))
+    scale(m, scale = FALSE)
+  } else matrix(0, n, 0)
+  rss <- function(M) if (ncol(M)) sum(stats::lm.fit(M, x)$residuals^2) else sum(x^2)
+  rss_h <- rss(harm)
+  full <- cbind(tc, harm)
+  e <- stats::lm.fit(full, x)$residuals
+  trend_r2 <- if (rss_h > 0) max(0, (rss_h - sum(e^2)) / rss_h) else 0
+  acf1 <- stats::acf(e, 1, plot = FALSE)$acf[2]
+  ar_order <- tryCatch(stats::ar(e, aic = TRUE, order.max = max_order, method = "yule-walker")$order,
+                       error = function(err) NA_integer_)
+  phi <- tryCatch(unname(stats::arima(e, order = c(1, 0, 0), include.mean = FALSE)$coef[1]),
+                  error = function(err) acf1)
+  c(acf1 = acf1, phi = phi, ar_order = ar_order, ljung_p = lb_p, period = pg$period,
+    period_strength = pg$strength, period_p = pg$p, trend_r2 = trend_r2)
+}
+
+# Least-squares periodogram of a centred series: for every frequency of a grid
+# oversampled `oversample` times relative to the Fourier spacing 1/n, the share of the
+# variance explained by a sine-cosine pair (closed form of the two-column regression).
+# The peak is tested against the local background spectrum, so red noise (large
+# low-frequency ordinates) is not read as a cycle: under the null every ordinate is
+# about s(f) * chi-squared(2), and the peak divided by the mean of the K ordinates
+# around it follows about F(2, 2K). The p-value accounts for the frequencies searched
+# (twice the Fourier frequencies of the band, for the oversampled grid).
+.ls_periodogram <- function(x, t = seq_along(x), period = NULL, min_period = 2, max_period = length(x) / 3,
+                            oversample = 10, window = 8) {
+  n <- length(x)
+  ss <- sum(x^2)
+  na <- list(period = NA_real_, strength = NA_real_, p = NA_real_)
+  if (n < 8 || ss <= 0) return(na)
+  f <- if (is.null(period)) seq(1 / max_period, 1 / min_period, by = 1 / (oversample * n)) else 1 / period
+  ang <- 2 * pi * outer(t, f)
+  S <- sin(ang); C <- cos(ang)
+  S <- sweep(S, 2, colMeans(S)); C <- sweep(C, 2, colMeans(C))
+  sss <- colSums(S^2); scc <- colSums(C^2); ssc <- colSums(S * C)
+  bs <- colSums(S * x); bc <- colSums(C * x)
+  det <- sss * scc - ssc^2
+  ess <- ifelse(det > 1e-8 * pmax(sss * scc, 1e-12), (scc * bs^2 - 2 * ssc * bs * bc + sss * bc^2) / det,
+                ifelse(scc > 1e-12, bc^2 / scc, 0))
+  k <- which.max(ess)
+  # local background: mean ordinate at Fourier-spaced frequencies within `window` steps
+  # of the peak (the peak and its immediate neighbours excluded), on the full grid
+  fb <- seq(max(1 / max_period, f[k] - window / n), min(1 / min_period, f[k] + window / n), by = 1 / n)
+  fb <- fb[abs(fb - f[k]) > 1.5 / n]
+  ab <- 2 * pi * outer(t, fb)
+  Sb <- sweep(sin(ab), 2, colMeans(sin(ab))); Cb <- sweep(cos(ab), 2, colMeans(cos(ab)))
+  s1 <- colSums(Sb^2); c1 <- colSums(Cb^2); sc1 <- colSums(Sb * Cb); b1 <- colSums(Sb * x); b2 <- colSums(Cb * x)
+  d1 <- s1 * c1 - sc1^2
+  eb <- ifelse(d1 > 1e-8 * pmax(s1 * c1, 1e-12), (c1 * b1^2 - 2 * sc1 * b1 * b2 + s1 * b2^2) / d1,
+               ifelse(c1 > 1e-12, b2^2 / c1, 0))
+  K <- length(eb)
+  if (K < 2 || mean(eb) <= 0) return(list(period = 1 / f[k], strength = ess[k] / ss, p = NA_real_))
+  g <- ess[k] / mean(eb)                                   # about F(2, 2K) under the null
+  p1 <- (1 + g / K)^(-K)
+  m <- if (is.null(period)) max(1, 2 * (floor(n / min_period) - floor(n / max_period))) else 1
+  list(period = 1 / f[k], strength = ess[k] / ss, p = 1 - (1 - p1)^m)
 }
 
 # --- Spatio-temporal -------------------------------------------------------------------
@@ -131,7 +192,8 @@
 #   direction. shift_indicator is the gain of the best direction minus the median
 #   gain over directions; shift_direction is that direction (degrees, from the
 #   neighbour to the site, counter-clockwise from the x axis).
-.st_stats <- function(z, coords, index, lw = NULL, k = 8, n_slices = 6, n_sites = 30, max_lag = 10, nsim = 0) {
+.st_stats <- function(z, coords, index, lw = NULL, k = 8, n_slices = 6, n_sites = 30, max_lag = 10, nsim = 0,
+                      period = NULL) {
   coords <- as.matrix(coords)
   n <- nrow(coords)
   nt <- max(index$time)
@@ -148,7 +210,7 @@
   structured <- sp[, "moran_p"] < 0.05
   use <- if (any(structured)) structured else rep(TRUE, nrow(sp))
   sites <- unique(round(seq(1, n, length.out = min(n, n_sites))))
-  tm <- t(vapply(sites, function(i) .temporal_stats(zm[i, ]), numeric(7)))
+  tm <- t(vapply(sites, function(i) .temporal_stats(zm[i, ], period = period), numeric(8)))
   nb <- spdep::knearneigh(coords, k = k)$nn
   pairs <- data.frame(i = rep(sites, each = k), j = as.vector(t(nb[sites, , drop = FALSE])))
   lags <- seq_len(max(1, min(max_lag, floor(nt / 4))))
@@ -165,7 +227,7 @@
     acf1 = med(tm[, "acf1"]), phi = med(tm[, "phi"]), ar_order = med(tm[, "ar_order"]),
     ljung_p = med(tm[, "ljung_p"]),
     period = as.numeric(names(which.max(table(round(tm[, "period"]))))),
-    period_strength = med(tm[, "period_strength"]), trend_r2 = med(tm[, "trend_r2"]),
+    period_strength = med(tm[, "period_strength"]), period_p = med(tm[, "period_p"]), trend_r2 = med(tm[, "trend_r2"]),
     shift_indicator = max(gain_bin, na.rm = TRUE) - med(gain_bin),
     shift_direction = as.numeric(names(gain_bin)[which.max(gain_bin)]))
 }
