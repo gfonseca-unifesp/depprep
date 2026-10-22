@@ -4,7 +4,18 @@
 \alias{verify}
 \title{Verify what a correction removed and what it kept}
 \usage{
-verify(corrected, X, coords = NULL, time = NULL, index = NULL)
+verify(
+  corrected,
+  X,
+  coords = NULL,
+  time = NULL,
+  index = NULL,
+  period = NULL,
+  alpha = 0.05,
+  nperm = 199,
+  q3_threshold = 0.14,
+  seed = 1L
+)
 }
 \arguments{
 \item{corrected}{Output of \code{\link[=correct]{correct()}} (conditional or whiten mode).}
@@ -12,26 +23,114 @@ verify(corrected, X, coords = NULL, time = NULL, index = NULL)
 \item{X}{The raw data (matrix or \code{depprep_sim}), as given to \code{\link[=correct]{correct()}}.}
 
 \item{coords, time, index}{As in \code{\link[=correct]{correct()}}.}
+
+\item{period}{Known seasonal period, for the Ljung-Box lag in time; \code{NULL} to take
+it from \code{corrected} when it records one.}
+
+\item{alpha}{Level of the residual-structure tests.}
+
+\item{nperm}{Permutations of the Mantel and Ljung-Box tests; 0 skips the Mantel
+correlogram and takes the Ljung-Box p-values from the chi-square distribution.}
+
+\item{q3_threshold}{Mean absolute association carried by the projected part above
+which the Q3 warning is raised.}
+
+\item{seed}{Seed of the permutations.}
 }
 \value{
-A list of class \code{depprep_verification} with \code{variables} (data frame),
-\code{delta_R} (matrix), \code{delta_summary} (data frame), \code{kn}, \code{union_kn} and \code{warnings}.
+A list of class \code{depprep_verification} with
+\itemize{
+\item \code{variables} (data frame: group, \code{removed}, \code{autocor_before}, \code{autocor_after},
+\code{large_share}, then \code{correlogram_p} and \code{extent} in space and space-time or
+\code{lb_lag} and \code{lb_p} in time, and \code{residual_structure});
+\item \code{correlograms} (data frame, one row per variable and distance class: \code{class},
+\code{distance}, \code{pairs}, \code{moran_I}, \code{expected}, \code{p}, \code{p_progressive}; \code{NULL} in time);
+\item \code{mantel} (data frame, one row per distance class: \code{class}, \code{distance}, \code{pairs},
+\code{mantel_r}, \code{p}, \code{p_progressive}; \code{NULL} when \code{nperm = 0}) and \code{mantel_p} (its
+Bonferroni global test);
+\item \code{R_large}, \code{cov_large}, \code{cov_residual}, \code{large_share}, \code{large_share_pairwise}
+(matrices, see above);
+\item \code{q3} (list: \code{statistic}, \code{share}, \code{threshold}, \code{warning});
+\item \code{delta_R} (corrected R minus raw R), \code{delta_summary} (by kind of pair), \code{kn},
+\code{union_kn}, \code{warnings} (those of \code{\link[=correct]{correct()}} plus the Q3 warning) and \code{notes}.
+}
 }
 \description{
-Summarises a \code{\link[=correct]{correct()}} result against the raw data:
+Summarises a \code{\link[=correct]{correct()}} result against the raw data in three parts.
+}
+\details{
+\strong{Residual structure} (what the correction left; Legendre and Legendre 2012,
+sections 12.3 and 13.1):
 \itemize{
 \item for each variable, the share of its variance that was removed and its
 autocorrelation before and after (Moran's I with 8 nearest neighbours in space,
 on the site means in space-time; lag-1 autocorrelation in time);
-\item Delta R = R corrected - R raw for every pair, summarised within groups, across
-groups and for pairs involving variables without dependence;
-\item the share of degrees of freedom used by each group basis and each union, with the
-warnings of \code{\link[=correct]{correct()}}.
+\item in space (and on the site means in space-time), a Moran correlogram of each
+corrected variable by distance class. The classes are those of
+\code{\link[vegan:mantel.correlog]{vegan::mantel.correlog()}}: equal widths, Sturges' rule for their number, and the
+far classes dropped when some site has no partner in them. Each class is tested
+two-sided. The correlogram is significant when its smallest p-value passes a
+Bonferroni correction over the classes; \code{extent} counts the first classes that stay
+significant with the progressive Bonferroni correction (class k tested at
+\code{alpha / k}), that is, how far the structure that is left extends;
+\item in time, a Ljung-Box test of each corrected variable up to lag
+\code{max(2 * period, 10 * log10(n))} (at most \code{n / 3}), where the period is \code{period},
+or the one stored in \code{corrected}, or the one of the seasonal terms of its bases;
+without a period, up to \code{10 * log10(n)};
+\item on the whole corrected matrix (standardised variables, Euclidean distance), a
+multivariate Mantel correlogram (classes and statistics of
+\code{\link[vegan:mantel.correlog]{vegan::mantel.correlog()}}, progressive Bonferroni correction), against the
+distance between sites in space and space-time (on the site means) and between times
+in time.
 }
+
+Residuals on a basis are not exchangeable: removing the broad scales leaves a
+negative autocorrelation at short distances and lags, which the usual tests would
+report as structure. The null is therefore white noise with the same basis (and the
+mean) removed: the exact moments of Moran's I for residuals (Cliff and Ord, as in
+\code{\link[spdep:lm.morantest]{spdep::lm.morantest()}}; the \code{expected} column), and, for the Ljung-Box and Mantel
+tests, \code{nperm} permutations of the rows projected off the basis again (Freedman and
+Lane). In the whiten mode only the mean is removed, so these are the usual tests.
+
+\strong{What was removed} (the logic of variation partitioning). In the conditional
+mode each variable splits into a projected (large-scale) part \verb{P x} and a residual
+part \verb{(I - P) x}, and so does the covariance of every pair, exactly:
+\verb{x'y = x'P y + x'(I - P) y}. On the union of all bases (the projector of the data
+matrix \code{corrected$X}) this gives \code{cov_large + cov_residual = cov(X)}, \code{R_large}
+(the correlation of the projected parts) and \code{large_share} (the share of each
+covariance, and on the diagonal of each variance, that lay in the projected part).
+\code{large_share_pairwise} gives the same share with the projector \code{correct()} uses for
+each pair in \code{R}: the group basis within a group, the union of the two group bases
+across groups, none between variables without dependence. Whitening has no
+projected part: these elements are then \code{NA}, and \code{notes} says so.
+
+\strong{Warning for question Q3} ("signal at the scale of the basis"). Classes that are
+contiguous in space or time (regions, periods) live at the scale of the basis, and the
+correction removes them together with the dependence. \code{q3$statistic} is the mean
+absolute association between variables carried by the projected part: the mean over
+all pairs of \verb{|cov_large| / (sd_x sd_y)}, the projected part of each correlation on
+the union of the bases. The warning is raised when it exceeds \code{q3_threshold}.
+\code{q3$share} gives that association as a share of the total, \verb{sum |cov_large| / sum (|cov_large| + |cov_residual|)}, for information only: it is high whenever little
+association is left in the residuals, also in the null truth, so it does not tell
+classes from shared fields. The default threshold was calibrated in
+\verb{analysis/06c_q3_warning.R} on the stage 6 pilot scenarios, contiguous classes against
+the null truth. In those designs the large-scale fields are shared within groups of
+6-8 of the 30 variables, while contiguous classes reach every variable. The warning
+cannot tell a large-scale field shared by most variables from regional classes: it
+says that much of the association between variables is at the scale of the basis.
+When it fires, check whether the classes sought could be regions or periods before
+using the corrected data for them.
 }
 \examples{
 g <- sim_groups(sim_group("long", 4, "matern", range = 0.5), sim_group("none", 2, "none"))
 s <- sim_spatial(300, g, seed = 1)
 cr <- correct(s, group_regimes(diagnose_variables(s, nsim = 99)))
-verify(cr, s)$delta_summary
+v <- verify(cr, s, nperm = 99)
+v$delta_summary
+v$variables[, c("variable", "large_share", "correlogram_p", "extent")]
+v$q3    # fires: one large-scale field is shared by 4 of the 6 variables (see Details)
+}
+\references{
+Legendre, P. and Legendre, L. (2012). \emph{Numerical Ecology}, 3rd ed.
+Elsevier. Sections 12.3, 13.1.1, 13.1.6 and 13.5.
 }
