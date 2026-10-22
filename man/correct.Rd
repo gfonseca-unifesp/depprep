@@ -11,7 +11,8 @@ correct(
   time = NULL,
   index = NULL,
   bases = NULL,
-  mode = c("conditional", "whiten", "scale"),
+  mode = NULL,
+  scope = NULL,
   kn_max = 0.3,
   seed = 1L
 )
@@ -28,7 +29,12 @@ group of each variable (\code{"none"} for variables without dependence).}
 \item{bases}{Optional named list with one basis per group (from
 \code{\link[=build_group_basis]{build_group_basis()}}); built when \code{NULL}.}
 
-\item{mode}{\code{"conditional"}, \code{"whiten"} or \code{"scale"}.}
+\item{mode}{\code{"conditional"}, \code{"whiten"} or \code{"scale"}; \code{NULL} for the default of the
+data family (see above).}
+
+\item{scope}{\code{"global"} or \code{"groups"}; \code{NULL} for the default (\code{"global"} for the
+conditional and scale modes in spatial and temporal data, \code{"groups"} otherwise and
+whenever \code{bases} is given).}
 
 \item{kn_max}{Share of degrees of freedom above which a union of bases is flagged.}
 
@@ -38,7 +44,8 @@ group of each variable (\code{"none"} for variables without dependence).}
 An object of class \code{depprep_corrected}: a list with \code{R}, \code{R_pairwise}
 (before the projection), \code{adjustment}, \code{X} (residuals or whitened data; \code{NULL} in
 scale mode), \code{R_scale} (scale mode), \code{bases}, \code{kn} (by group), \code{union_kn} (by
-pair of groups), \code{warnings}, \code{mode} and \code{group}.
+pair of groups), \code{warnings}, \code{mode}, \code{scope} and \code{group} (\code{"global"} for every
+dependent variable under the global scope).
 }
 \description{
 Removes the large-scale structure of each group of variables with the group's own
@@ -66,6 +73,19 @@ matter for rough processes. Pairs across groups use each group's own whitening;
 Moran eigenvector maps, or of the temporal ones), from the projection of every
 variable on the band; spatial and temporal data only.
 }
+
+Scope of the bases: \code{"groups"} (one basis per group, unions across groups) or
+\code{"global"} (one basis for all dependent variables: the union of the bases selected on
+all of them for each regime type present). Variables without dependence are never
+corrected among themselves.
+
+Defaults (decision D7, calibrated on the stage 5 simulations, where all basis
+approaches gave nearly the same error): spatial and temporal data use the conditional
+mode with the global basis, the simplest; spatio-temporal data use whitening with the
+groups, which erred about half as much there, because the shared process persists in
+time and the residual does not. In space-time the result is then the correlation of
+the innovations, which equals the residual correlation when the residual association
+does not itself persist in time.
 }
 \examples{
 g <- sim_groups(sim_group("long", 4, "matern", range = 0.5), sim_group("none", 2, "none"))

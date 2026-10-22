@@ -120,7 +120,7 @@ didactic <- function() {
     depprep:::.resid_on(s$X[, j, drop = FALSE], b)
   }, numeric(nrow(s$X)))
   grp <- stats::setNames(ifelse(s$group == "C", "g2", "g1"), colnames(s$X))   # A and B share their field
-  shared <- correct(s, grp, seed = seed)
+  shared <- correct(s, grp, scope = "groups", seed = seed)
   list(seed = seed, group = s$group, R_true = R_true, R_raw = stats::cor(s$X), R_independent = stats::cor(indep),
        R_shared = shared$R, R_residual = stats::cor(s$components$residual))
 }

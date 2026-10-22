@@ -21,6 +21,19 @@
 #'   Moran eigenvector maps, or of the temporal ones), from the projection of every
 #'   variable on the band; spatial and temporal data only.
 #'
+#' Scope of the bases: `"groups"` (one basis per group, unions across groups) or
+#' `"global"` (one basis for all dependent variables: the union of the bases selected on
+#' all of them for each regime type present). Variables without dependence are never
+#' corrected among themselves.
+#'
+#' Defaults (decision D7, calibrated on the stage 5 simulations, where all basis
+#' approaches gave nearly the same error): spatial and temporal data use the conditional
+#' mode with the global basis, the simplest; spatio-temporal data use whitening with the
+#' groups, which erred about half as much there, because the shared process persists in
+#' time and the residual does not. In space-time the result is then the correlation of
+#' the innovations, which equals the residual correlation when the residual association
+#' does not itself persist in time.
+#'
 #' @param X Numeric matrix (observations x variables), or a `depprep_sim` object.
 #' @param grouping Output of [group_regimes()], or a named character vector giving the
 #'   group of each variable (`"none"` for variables without dependence).
@@ -28,13 +41,18 @@
 #'   [diagnose_variables()].
 #' @param bases Optional named list with one basis per group (from
 #'   [build_group_basis()]); built when `NULL`.
-#' @param mode `"conditional"`, `"whiten"` or `"scale"`.
+#' @param mode `"conditional"`, `"whiten"` or `"scale"`; `NULL` for the default of the
+#'   data family (see above).
+#' @param scope `"global"` or `"groups"`; `NULL` for the default (`"global"` for the
+#'   conditional and scale modes in spatial and temporal data, `"groups"` otherwise and
+#'   whenever `bases` is given).
 #' @param kn_max Share of degrees of freedom above which a union of bases is flagged.
 #' @param seed Seed of the basis selection (when `bases` is `NULL`).
 #' @return An object of class `depprep_corrected`: a list with `R`, `R_pairwise`
 #'   (before the projection), `adjustment`, `X` (residuals or whitened data; `NULL` in
 #'   scale mode), `R_scale` (scale mode), `bases`, `kn` (by group), `union_kn` (by
-#'   pair of groups), `warnings`, `mode` and `group`.
+#'   pair of groups), `warnings`, `mode`, `scope` and `group` (`"global"` for every
+#'   dependent variable under the global scope).
 #' @examples
 #' g <- sim_groups(sim_group("long", 4, "matern", range = 0.5), sim_group("none", 2, "none"))
 #' s <- sim_spatial(300, g, R_true = make_R_true(g, "blocks", within = 0.5, between = 0), seed = 1)
@@ -43,8 +61,7 @@
 #' round(cr$R, 2)
 #' @export
 correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases = NULL,
-                    mode = c("conditional", "whiten", "scale"), kn_max = 0.3, seed = 1L) {
-  mode <- match.arg(mode)
+                    mode = NULL, scope = NULL, kn_max = 0.3, seed = 1L) {
   if (inherits(X, "depprep_sim")) {
     d <- .data_parts(X); X <- d$X; coords <- d$coords; time <- d$time; index <- d$index
   }
@@ -52,10 +69,30 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   if (is.null(colnames(X))) colnames(X) <- paste0("V", seq_len(ncol(X)))
   family <- if (!is.null(coords) && !is.null(index)) "spatiotemporal" else if (!is.null(coords)) "spatial" else
     if (!is.null(time)) "temporal" else stop("Give `coords`, `time` or `coords` and `index`.", call. = FALSE)
+  if (is.null(mode)) mode <- if (family == "spatiotemporal") "whiten" else "conditional"
+  mode <- match.arg(mode, c("conditional", "whiten", "scale"))
+  if (is.null(scope)) scope <- if (is.null(bases) && mode != "whiten" && family != "spatiotemporal") "global" else "groups"
+  scope <- match.arg(scope, c("groups", "global"))
   grp <- .group_vector(grouping, colnames(X))
   gtype <- .group_types(grouping, grp)
   args <- switch(family, spatial = list(coords = coords), temporal = list(time = time),
                  spatiotemporal = list(coords = coords, index = index))
+  if (scope == "global" && any(grp != "none")) {
+    dep <- grp != "none"
+    vtype <- if (inherits(grouping, "data.frame") && "type" %in% names(grouping)) {
+      grouping$type[match(colnames(X), grouping$variable)]
+    } else unlist(gtype[grp])
+    types <- unique(vtype[dep])
+    if (is.null(bases)) {
+      period <- if (inherits(grouping, "depprep_grouping")) attr(grouping, "period") else NULL
+      per <- if (!is.null(period) && any(is.finite(period))) round(stats::median(period[is.finite(period)])) else 12
+      bs <- lapply(types, function(t) do.call(build_group_basis, c(list(X_group = X[, dep, drop = FALSE], type = t,
+                                                                        period = per, seed = seed), args)))
+      bases <- list(global = suppressWarnings(do.call(union_basis, c(bs, kn_max = kn_max))))
+    }
+    grp[dep] <- "global"
+    gtype <- list(global = if (any(types %in% c("seasonal", "trend"))) "seasonal" else types[1], none = "none")
+  }
   groups <- setdiff(unique(grp), "none")
   if (is.null(bases)) {
     period <- if (inherits(grouping, "depprep_grouping")) attr(grouping, "period") else NULL
@@ -70,7 +107,11 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   basis_of <- function(g) if (g == "none") empty else bases[[g]]
   kn <- vapply(groups, function(g) attr(bases[[g]], "kn"), 0)
 
-  if (mode == "scale") return(.correct_scale(X, grp, family, coords, time, groups, bases, kn))
+  if (mode == "scale") {
+    out <- .correct_scale(X, grp, family, coords, time, groups, bases, kn)
+    out$scope <- scope
+    return(out)
+  }
 
   # transformed data per group: residuals on a basis, or whitened observations
   transform <- if (mode == "conditional") {
@@ -114,13 +155,13 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     do.call(cbind, lapply(parts, utils::tail, m))[, colnames(X), drop = FALSE]
   }
   structure(list(R = near, R_pairwise = R, adjustment = sqrt(sum((near - R)^2)), X = Xout, R_scale = NULL,
-                 bases = bases, kn = kn, union_kn = union_kn, warnings = warn, mode = mode, group = grp),
+                 bases = bases, kn = kn, union_kn = union_kn, warnings = warn, mode = mode, scope = scope, group = grp),
             class = "depprep_corrected")
 }
 
 #' @export
 print.depprep_corrected <- function(x, ...) {
-  cat(sprintf("<depprep_corrected> mode %s: %d variables in %d groups (+ %d without dependence)\n", x$mode,
+  cat(sprintf("<depprep_corrected> mode %s, %s bases: %d variables in %d groups (+ %d without dependence)\n", x$mode, x$scope,
               length(x$group), length(setdiff(unique(x$group), "none")), sum(x$group == "none")))
   if (length(x$kn)) cat("k/n by group:", paste(sprintf("%s %.3f", names(x$kn), x$kn), collapse = "; "), "\n")
   if (length(x$warnings)) cat("Warnings:", paste(x$warnings, collapse = "; "), "\n")

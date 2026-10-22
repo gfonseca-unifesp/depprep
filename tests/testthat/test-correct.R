@@ -85,3 +85,26 @@ test_that("the scale mode gives one valid correlation matrix per band", {
   for (r in cs$R_scale) expect_equal(unname(diag(r)), rep(1, 3))
   expect_error(verify(cs, s), "conditional")
 })
+
+test_that("defaults follow decision D7: global basis in space and time, whitening in space-time", {
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("b", 3, "matern", range = 0.15),
+                  sim_group("none", 2, "none"))
+  s <- sim_spatial(300, g, seed = 7)
+  gr <- group_regimes(diagnose_variables(s, nsim = 99))
+  cr <- correct(s, gr)
+  expect_identical(cr$mode, "conditional")
+  expect_identical(cr$scope, "global")
+  expect_named(cr$bases, "global")
+  dep <- gr$group != "none"
+  expect_true(all(cr$group[dep] == "global"))
+  # variables without dependence are not corrected among themselves
+  nn <- which(!dep)
+  if (length(nn) > 1) expect_equal(cr$R[nn[1], nn[2]], stats::cor(s$X)[nn[1], nn[2]], tolerance = 1e-8)
+  expect_identical(correct(s, gr, scope = "groups")$scope, "groups")
+  g2 <- sim_groups(sim_group("sep", 3, "separable_ar1", range = 0.5, phi = 0.9), sim_group("none", 2, "none"))
+  s2 <- sim_spatiotemporal(30, 40, g2, seed = 8)
+  gr2 <- group_regimes(diagnose_variables(s2, nsim = 99))
+  cw <- correct(s2, gr2)
+  expect_identical(cw$mode, "whiten")
+  expect_identical(cw$scope, "groups")
+})
