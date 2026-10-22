@@ -25,6 +25,7 @@
 suppressMessages(devtools::load_all(quiet = TRUE))
 library(parallel)
 source(file.path("analysis", "d4_scenarios.R"))
+scenarios <- rbind(scenarios, d14_scenarios)            # D14: gradient, seasonal + trend, off-grid period
 
 data_seed <- 3300L
 stage_seed <- 4400L
@@ -130,15 +131,15 @@ one_bases <- function(sc, sig) {
 # --- Run -------------------------------------------------------------------------------
 Sys.setenv(RENV_CONFIG_SANDBOX_ENABLED = "FALSE")
 cl <- makeCluster(max(1, min(24, detectCores() - 4)), setup_timeout = 900)
-clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE)); NULL }, getwd())
-clusterExport(cl, c("data_seed", "stage_seed", "B_stab", "spatial_groups", "temporal_groups", "st_groups",
-                    "truth_table", "simulate", "one_grouping", "one_stability", "group_bases", "one_bases"))
+clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE))
+  source(file.path("analysis", "d4_scenarios.R")); NULL }, getwd())
+clusterExport(cl, c("data_seed", "stage_seed", "B_stab", "one_grouping", "one_stability", "group_bases", "one_bases"))
 cat(format(Sys.time()), "start\n", file = log_file, append = TRUE)
 run_part <- function(part, k, fun, reps) {
   f <- file.path(out_dir, sprintf("%s_%02d.rds", part, k))
   if (file.exists(f)) return(invisible())
   t0 <- Sys.time()
-  sc <- scenarios[k, ]
+  sc <- scenarios[scenarios$id == k, ]
   sigs <- signatures(k)[seq_len(reps)]
   res <- parLapply(cl, sigs, fun, sc = sc)
   saveRDS(res, f)
@@ -153,7 +154,7 @@ stopCluster(cl)
 
 # --- Summaries -----------------------------------------------------------------------------
 read_part <- function(part) lapply(scenarios$id, function(k) readRDS(file.path(out_dir, sprintf("%s_%02d.rds", part, k))))
-lab <- function(d) { d$label <- scenarios$label[d$scenario]; d$family <- scenarios$family[d$scenario]; d }
+lab <- function(d) { i <- match(d$scenario, scenarios$id); d$label <- scenarios$label[i]; d$family <- scenarios$family[i]; d }
 
 grp <- lab(do.call(rbind, unlist(read_part("grouping"), recursive = FALSE)))
 saveRDS(grp, file.path("results", "grouping_replicates.rds"))

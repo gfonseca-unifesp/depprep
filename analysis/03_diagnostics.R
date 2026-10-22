@@ -29,6 +29,7 @@ log_file <- file.path(out_dir, "progress.log")
 
 # --- Scenarios (decision D4) -------------------------------------------------------------
 source(file.path("analysis", "d4_scenarios.R"))
+scenarios <- rbind(scenarios, d14_scenarios)            # D14: gradient, seasonal + trend, off-grid period
 write.csv(scenarios, file.path(out_dir, "scenarios.csv"), row.names = FALSE)
 
 one_replicate <- function(sc, r) {
@@ -54,12 +55,12 @@ one_bootstrap <- function(sc, r) {
 # the connection timeout is raised.
 Sys.setenv(RENV_CONFIG_SANDBOX_ENABLED = "FALSE")
 cl <- makeCluster(max(1, min(24, detectCores() - 4)), setup_timeout = 900)
-clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE)); NULL }, getwd())
-clusterExport(cl, c("base_seed", "B", "spatial_groups", "temporal_groups", "st_groups", "truth_table",
-                    "simulate", "one_replicate", "one_bootstrap"))
+clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE))
+  source(file.path("analysis", "d4_scenarios.R")); NULL }, getwd())
+clusterExport(cl, c("base_seed", "B", "one_replicate", "one_bootstrap"))
 cat(format(Sys.time()), "start\n", file = log_file, append = TRUE)
 for (k in scenarios$id) {
-  sc <- scenarios[k, ]
+  sc <- scenarios[scenarios$id == k, ]
   f <- file.path(out_dir, sprintf("scenario_%02d.rds", k))
   if (!file.exists(f)) {
     t0 <- Sys.time()
@@ -79,7 +80,7 @@ stopCluster(cl)
 
 # --- Summary -----------------------------------------------------------------------------
 all <- do.call(rbind, lapply(scenarios$id, function(k) readRDS(file.path(out_dir, sprintf("scenario_%02d.rds", k)))))
-all$label <- scenarios$label[all$scenario]
+all$label <- scenarios$label[match(all$scenario, scenarios$id)]
 all$type <- unname(classify_regime(all))   # classified again, so new thresholds need no new run
 all$correct <- all$type == all$true_type
 saveRDS(all, file.path("results", "diagnostics_variables.rds"))
@@ -99,7 +100,7 @@ write.csv(summary_tab, file.path("results", "diagnostics_summary.csv"), row.name
 
 boot <- do.call(rbind, lapply(scenarios$id[scenarios$family != "spatiotemporal"], function(k)
   readRDS(file.path(out_dir, sprintf("bootstrap_%02d.rds", k)))))
-boot$label <- scenarios$label[boot$scenario]
+boot$label <- scenarios$label[match(boot$scenario, scenarios$id)]
 boot$range_cover <- with(boot, ifelse(is.na(true_range) | is.na(range_lo), NA, range_lo <= true_range & true_range <= range_hi))
 boot$phi_target <- boot$share * boot$true_phi                       # lag-1 autocorrelation of the observed variable
 boot$phi_cover <- with(boot, ifelse(is.na(phi_target) | is.na(phi_lo), NA, phi_lo <= phi_target & phi_target <= phi_hi))

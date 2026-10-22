@@ -4,10 +4,13 @@
 # T T=480 high and ST 50x60, each in three truths — null (no association, no classes:
 # any structure found is spurious, H1), structured (R_true in blocks + 3 random classes:
 # recovery, H3/H4) and contiguous (3 classes contiguous in space or time: Q3).
-# 20 replicates per scenario.
+# 20 replicates per scenario. D14 adds two truths to each family: blocks that cross the
+# regime groups ("crossed") and correlation 0.3 between groups (ids 13 on).
+# Contiguous truths also get contiguity-constrained clustering (D14).
 #
 # Approaches: none; independent (one basis per variable); default (decision D7: global
 # basis in space and time, whitening in space-time); groups (one basis per group);
+# variables (D14: each variable selects its basis, the union is shared);
 # whiten (space and time only; it is the default in space-time); broad (projection on
 # the broad band of scales, contiguous truth only: what the scale mode keeps); sbss and
 # maf (spatial only). Each approach gives a correlation matrix (PCA) and a data matrix
@@ -60,6 +63,8 @@ one_pilot <- function(sc, r) {
   })
   approaches$default <- timed(correct(s, gr, seed = seed)[c("X", "R")])
   approaches$groups <- timed(correct(s, gr, mode = "conditional", scope = "groups", seed = seed)[c("X", "R")])
+  # D14: each variable selects its basis, the union is shared (Peres-Neto & Legendre 2010)
+  approaches$variables <- timed(correct(s, gr, mode = "conditional", scope = "variables", seed = seed)[c("X", "R")])
   if (s$family != "spatiotemporal") approaches$whiten <- timed(correct(s, gr, mode = "whiten", seed = seed)[c("X", "R")])
   if (sc$truth == "contiguous" && s$family != "spatiotemporal") approaches$broad <- timed({
     cand <- if (s$family == "spatial") .spatial_candidates(s$coords) else .temporal_candidates(s$time, "ar")
@@ -78,7 +83,9 @@ one_pilot <- function(sc, r) {
                run_downstream(A$X, "mds", truth = tr, distance = "euclidean", seed = seed),
                run_downstream(A$X, "mds", truth = tr, distance = "gower", seed = seed),
                run_downstream(A$X, "kmeans", truth = tr, seed = seed),
-               run_downstream(A$X, "som", truth = tr, seed = seed))
+               run_downstream(A$X, "som", truth = tr, seed = seed),
+               # D14: contiguity-constrained clustering, the reference for contiguous classes
+               if (sc$truth == "contiguous") run_downstream(A$X, "constrained", truth = tr, seed = seed))
     cbind(approach = a, m, seconds_correction = attr(A, "seconds"))
   }))
   cbind(scenario = sc$id, replicate = r, seed = seed, res,
@@ -106,11 +113,11 @@ stopCluster(cl)
 
 # --- Summaries ---------------------------------------------------------------------------------
 all <- do.call(rbind, lapply(pilot_scenarios$id, function(k) readRDS(file.path(out_dir, sprintf("scenario_%02d.rds", k)))))
-all <- merge(all, pilot_scenarios[, c("id", "label", "family", "smoothness", "truth")], by.x = "scenario", by.y = "id")
+all <- merge(all, pilot_scenarios[, c("id", "label", "family", "smoothness", "truth", "between")], by.x = "scenario", by.y = "id")
 saveRDS(all, file.path("results", "pilot_replicates.rds"))
 summ <- do.call(rbind, lapply(split(all, list(all$scenario, all$approach, all$method, all$metric), drop = TRUE), function(d) {
   v <- d$value[is.finite(d$value)]
-  data.frame(d[1, c("scenario", "label", "family", "smoothness", "truth", "approach", "method", "metric")],
+  data.frame(d[1, c("scenario", "label", "family", "smoothness", "truth", "between", "approach", "method", "metric")],
              n = length(v), mean = if (length(v)) mean(v) else NA, median = if (length(v)) stats::median(v) else NA,
              q05 = if (length(v)) stats::quantile(v, 0.05) else NA, q95 = if (length(v)) stats::quantile(v, 0.95) else NA,
              sd = if (length(v) > 1) stats::sd(v) else NA, row.names = NULL)

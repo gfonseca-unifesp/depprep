@@ -2,7 +2,8 @@
 #
 # Scenarios: the D4 grid (ids 1-10, the very data of stages 3 and 4) and the stage 5
 # additions (ids 11-18): smooth large-scale fields (Matern 2.5, decision D12) and the
-# "same regime, different fields" case (decision D11). Replicates: 50 per scenario
+# "same regime, different fields" case (decision D11); D14 (ids 19 on): a spatial
+# gradient, a seasonal cycle with a trend and a period off the Fourier grid. Replicates: 50 per scenario
 # (spatial, temporal, fields), 20 for ST 50x60 and 10 for ST 100x120 (cost).
 #
 # Approaches, for every replicate:
@@ -11,6 +12,8 @@
 #   global        one basis for all variables (the union of the bases selected on all
 #                 dependent variables for each regime type present)
 #   groups        the proposal: Gaussian-mixture groups (D6) and one basis per group
+#   variables     each variable selects its basis and their union is shared (D14;
+#                 Peres-Neto & Legendre 2010)
 #   groups_split  the same plus the second level by subspace overlap (D11)
 #   type_split    regime type as the first level plus the subspace level (D11)
 #   oracle_groups the true groups, with bases selected on them
@@ -38,7 +41,7 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 log_file <- file.path(out_dir, "progress.log")
 thr_tab <- read.csv(file.path("results", "d11_threshold.csv"))
 split_threshold <- thr_tab$threshold[which.max(thr_tab$youden)]
-all_scenarios <- rbind(scenarios, extra_scenarios)
+all_scenarios <- rbind(scenarios, extra_scenarios, d14_scenarios)   # D14 adds ids 19 on
 n_rep <- function(sc) if (sc$family != "spatiotemporal") 50L else if (sc$n == 50) 20L else 10L
 
 # --- One replicate -----------------------------------------------------------------------
@@ -106,6 +109,9 @@ one_replicate <- function(sc, r, sig_d4) {
   }
   g6 <- timed(group_regimes(sig))
   grouped("groups", g6$value)
+  # D14: each variable selects its own basis and their union is shared (Peres-Neto & Legendre 2010)
+  vb <- timed(correct(s, g6$value, mode = "conditional", scope = "variables", seed = bseed))
+  add("variables", vb$value$R, vb$seconds, capture_of(rep(list(vb$value$bases$union), p)), attr(vb$value$bases$union, "kn"))
   grouped("groups_split", group_regimes(sig, data = s, split = "subspace", split_threshold = split_threshold, seed = bseed))
   grouped("type_split", group_regimes(sig, data = s, method = "type", split = "subspace", split_threshold = split_threshold, seed = bseed))
   oracle <- data.frame(variable = colnames(s$X), group = true_grp, group_type = ifelse(true_grp == "none", "none", truth$true_type))
@@ -119,16 +125,16 @@ one_replicate <- function(sc, r, sig_d4) {
 # --- Run -------------------------------------------------------------------------------------
 Sys.setenv(RENV_CONFIG_SANDBOX_ENABLED = "FALSE")
 cl <- makeCluster(max(1, min(24, detectCores() - 4)), setup_timeout = 900)
-clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE)); NULL }, getwd())
-clusterExport(cl, c("data_seed", "stage_seed", "split_threshold", "spatial_field", "spatial_groups", "fields_groups",
-                    "temporal_groups", "st_groups", "truth_table", "simulate", "one_replicate"))
+clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE))
+  source(file.path("analysis", "d4_scenarios.R")); NULL }, getwd())
+clusterExport(cl, c("data_seed", "stage_seed", "split_threshold", "one_replicate"))
 cat(format(Sys.time()), "start; D11 threshold", split_threshold, "\n", file = log_file, append = TRUE)
 for (k in seq_len(nrow(all_scenarios))) {
   sc <- all_scenarios[k, ]
   f <- file.path(out_dir, sprintf("scenario_%02d.rds", sc$id))
   if (file.exists(f)) next
   t0 <- Sys.time()
-  d4 <- if (sc$id <= 10) readRDS(file.path("results", "diagnostics", sprintf("scenario_%02d.rds", sc$id))) else NULL
+  d4 <- if (sc$id <= 10 || sc$id %in% d14_scenarios$id) readRDS(file.path("results", "diagnostics", sprintf("scenario_%02d.rds", sc$id))) else NULL
   tasks <- lapply(seq_len(n_rep(sc)), function(r) list(r = r, sig = if (!is.null(d4)) d4[d4$replicate == r, ] else NULL))
   res <- parLapply(cl, tasks, function(t, sc) one_replicate(sc, t$r, t$sig), sc = sc)
   saveRDS(do.call(rbind, res), f)
