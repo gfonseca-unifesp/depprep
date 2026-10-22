@@ -14,7 +14,8 @@ build_group_basis(
   kn_max = 0.25,
   alpha = 0.05,
   nperm = 199,
-  seed = 1L
+  seed = 1L,
+  trend = TRUE
 )
 }
 \arguments{
@@ -38,11 +39,17 @@ build_group_basis(
 \item{nperm}{Number of permutations per test.}
 
 \item{seed}{Seed of the permutations.}
+
+\item{trend}{Put the trend terms (trend surface in space, cubic polynomial of time)
+among the candidates. \code{FALSE} gives the eigenvector maps and harmonics only, as
+used to compare the individual bases of the second grouping level.}
 }
 \value{
 A matrix with orthonormal columns (one row per observation) of class
 \code{depprep_basis}, with attributes \code{type}, \code{k}, \code{kn} (k / n), \code{r2} (share of the
-group's variance explained) and \code{terms} (names of the selected candidates).
+group's variance explained), \code{terms} (names of the selected candidates) and
+\code{scalogram} (share of the group's variance explained by each candidate, selected
+or not, in the order of the candidates; Borcard et al. 2004).
 }
 \description{
 Selects one spatial, temporal or spatio-temporal basis for a whole group, treating
@@ -52,17 +59,26 @@ is later corrected with this same basis (the core rule of the project).
 \details{
 Candidates depend on the type of the group:
 \itemize{
-\item spatial (\code{"isotropic"}, \code{"anisotropic"}): distance-based Moran eigenvector maps
-with positive autocorrelation (\code{adespatial::dbmem()});
-\item temporal: \code{"seasonal"}, harmonics of \code{period}; \code{"trend"}, a cubic polynomial
-followed by temporal dbMEM; \code{"ar"}, temporal dbMEM (slow persistence);
+\item spatial (\code{"isotropic"}, \code{"anisotropic"}): a quadratic trend surface of the
+centred coordinates (x, y, x^2, xy, y^2) followed by the distance-based Moran
+eigenvector maps with positive autocorrelation (\code{adespatial::dbmem()});
+\item temporal: \code{"seasonal"}, a cubic polynomial of time followed by the harmonics of
+\code{period}; \code{"trend"}, a cubic polynomial followed by temporal dbMEM; \code{"ar"},
+temporal dbMEM (slow persistence);
 \item spatio-temporal: products of a spatial and a temporal basis, each first selected
 on the stacked data (all times as responses for the spatial part, all sites for
 the temporal part) and each including the constant, so that purely spatial and
-purely temporal terms are candidates too. \code{"temporal_common"} gets temporal terms
-only and \code{"spatial_only"} spatial terms only;
+purely temporal terms are candidates too. The spatial margin has the trend surface
+and the temporal margin the cubic polynomial before its other terms.
+\code{"temporal_common"} gets temporal terms only and \code{"spatial_only"} spatial terms
+only;
 \item \code{"none"}: an empty basis.
 }
+
+Following Legendre and Legendre (2012, ch. 14), the trend terms are candidates like
+any other: forward selection keeps them only when they explain a significant share.
+They come first, so the eigenvector maps are made orthogonal to the trend and a
+gradient is described by a few trend terms instead of many broad maps.
 
 Candidates are made orthonormal, so the share of variance a candidate explains does
 not depend on the ones already selected. Forward selection adds candidates in order
@@ -83,4 +99,9 @@ attr(b, "k")
 \references{
 Blanchet, F. G., Legendre, P. and Borcard, D. (2008). Forward selection
 of explanatory variables. Ecology 89, 2623-2632.
+
+Borcard, D., Legendre, P., Avois-Jacquet, C. and Tuomisto, H. (2004). Dissecting
+the spatial structure of ecological data at multiple scales. Ecology 85, 1826-1832.
+
+Legendre, P. and Legendre, L. (2012). Numerical Ecology, 3rd ed. Elsevier.
 }

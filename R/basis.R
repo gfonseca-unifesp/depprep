@@ -5,16 +5,25 @@
 #' is later corrected with this same basis (the core rule of the project).
 #'
 #' Candidates depend on the type of the group:
-#' * spatial (`"isotropic"`, `"anisotropic"`): distance-based Moran eigenvector maps
-#'   with positive autocorrelation (`adespatial::dbmem()`);
-#' * temporal: `"seasonal"`, harmonics of `period`; `"trend"`, a cubic polynomial
-#'   followed by temporal dbMEM; `"ar"`, temporal dbMEM (slow persistence);
+#' * spatial (`"isotropic"`, `"anisotropic"`): a quadratic trend surface of the
+#'   centred coordinates (x, y, x^2, xy, y^2) followed by the distance-based Moran
+#'   eigenvector maps with positive autocorrelation (`adespatial::dbmem()`);
+#' * temporal: `"seasonal"`, a cubic polynomial of time followed by the harmonics of
+#'   `period`; `"trend"`, a cubic polynomial followed by temporal dbMEM; `"ar"`,
+#'   temporal dbMEM (slow persistence);
 #' * spatio-temporal: products of a spatial and a temporal basis, each first selected
 #'   on the stacked data (all times as responses for the spatial part, all sites for
 #'   the temporal part) and each including the constant, so that purely spatial and
-#'   purely temporal terms are candidates too. `"temporal_common"` gets temporal terms
-#'   only and `"spatial_only"` spatial terms only;
+#'   purely temporal terms are candidates too. The spatial margin has the trend surface
+#'   and the temporal margin the cubic polynomial before its other terms.
+#'   `"temporal_common"` gets temporal terms only and `"spatial_only"` spatial terms
+#'   only;
 #' * `"none"`: an empty basis.
+#'
+#' Following Legendre and Legendre (2012, ch. 14), the trend terms are candidates like
+#' any other: forward selection keeps them only when they explain a significant share.
+#' They come first, so the eigenvector maps are made orthogonal to the trend and a
+#' gradient is described by a few trend terms instead of many broad maps.
 #'
 #' Candidates are made orthonormal, so the share of variance a candidate explains does
 #' not depend on the ones already selected. Forward selection adds candidates in order
@@ -37,11 +46,21 @@
 #' @param alpha Significance level of the permutation tests.
 #' @param nperm Number of permutations per test.
 #' @param seed Seed of the permutations.
+#' @param trend Put the trend terms (trend surface in space, cubic polynomial of time)
+#'   among the candidates. `FALSE` gives the eigenvector maps and harmonics only, as
+#'   used to compare the individual bases of the second grouping level.
 #' @return A matrix with orthonormal columns (one row per observation) of class
 #'   `depprep_basis`, with attributes `type`, `k`, `kn` (k / n), `r2` (share of the
-#'   group's variance explained) and `terms` (names of the selected candidates).
+#'   group's variance explained), `terms` (names of the selected candidates) and
+#'   `scalogram` (share of the group's variance explained by each candidate, selected
+#'   or not, in the order of the candidates; Borcard et al. 2004).
 #' @references Blanchet, F. G., Legendre, P. and Borcard, D. (2008). Forward selection
 #'   of explanatory variables. Ecology 89, 2623-2632.
+#'
+#'   Borcard, D., Legendre, P., Avois-Jacquet, C. and Tuomisto, H. (2004). Dissecting
+#'   the spatial structure of ecological data at multiple scales. Ecology 85, 1826-1832.
+#'
+#'   Legendre, P. and Legendre, L. (2012). Numerical Ecology, 3rd ed. Elsevier.
 #' @examples
 #' g <- sim_groups(sim_group("long", 4, "exponential", range = 0.5))
 #' s <- sim_spatial(200, g, seed = 1)
@@ -49,7 +68,7 @@
 #' attr(b, "k")
 #' @export
 build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL, type, period = NULL,
-                              kn_max = 0.25, alpha = 0.05, nperm = 199, seed = 1L) {
+                              kn_max = 0.25, alpha = 0.05, nperm = 199, seed = 1L, trend = TRUE) {
   Y <- scale(as.matrix(X_group))
   Y[!is.finite(Y)] <- 0                                   # constant columns carry no information
   n <- nrow(Y)
@@ -60,23 +79,23 @@ build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL,
   if (type %in% c("seasonal", "separable_seasonal") && is.null(period)) {
     stop("`period` is required for seasonal groups.", call. = FALSE)
   }
-  if (type == "none") return(.as_basis(matrix(0, n, 0), type, n, 0, character(0)))
+  if (type == "none") return(.as_basis(matrix(0, n, 0), type, n, 0, character(0), numeric(0)))
 
   .with_stream(seed, .streams[["basis"]], {
     if (type %in% spatial_types) {
       if (is.null(coords)) stop("`coords` is required for spatial groups.", call. = FALSE)
-      sel <- .forward_select(Y, .spatial_candidates(coords), kn_max, alpha, nperm)
+      sel <- .forward_select(Y, .spatial_candidates(coords, trend = trend), kn_max, alpha, nperm)
     } else if (type %in% temporal_types) {
       if (is.null(time)) stop("`time` is required for temporal groups.", call. = FALSE)
       ord <- order(time)
-      cand <- .temporal_candidates(time[ord], type, period)
+      cand <- .temporal_candidates(time[ord], type, period, trend = trend && type %in% c("trend", "seasonal"))
       sel <- .forward_select(Y[ord, , drop = FALSE], cand, kn_max, alpha, nperm)
       sel$basis[ord, ] <- sel$basis                        # back to the order of the rows
     } else {
       if (is.null(coords) || is.null(index)) stop("`coords` and `index` are required for spatio-temporal groups.", call. = FALSE)
-      sel <- .st_select(Y, coords, index, type, period, kn_max, alpha, nperm)
+      sel <- .st_select(Y, coords, index, type, period, kn_max, alpha, nperm, trend)
     }
-    .as_basis(sel$basis, type, n, sel$r2, sel$terms)
+    .as_basis(sel$basis, type, n, sel$r2, sel$terms, sel$scalogram)
   })
 }
 
@@ -144,10 +163,11 @@ print.depprep_basis <- function(x, ...) {
   invisible(x)
 }
 
-.as_basis <- function(B, type, n, r2, terms) {
+.as_basis <- function(B, type, n, r2, terms, scalogram = NULL) {
   B <- as.matrix(B)
   dimnames(B) <- list(NULL, terms)
-  structure(B, class = "depprep_basis", type = type, k = ncol(B), kn = ncol(B) / n, r2 = r2, terms = terms)
+  structure(B, class = "depprep_basis", type = type, k = ncol(B), kn = ncol(B) / n, r2 = r2, terms = terms,
+            scalogram = scalogram)
 }
 
 # Orthonormal columns, centred, without (near) null directions; keeps the column order
@@ -166,37 +186,59 @@ print.depprep_basis <- function(x, ...) {
   Q
 }
 
-.spatial_candidates <- function(coords) {
+# Spatial candidates: the trend surface first (unless `trend = FALSE`), then the dbMEM.
+.spatial_candidates <- function(coords, trend = TRUE) {
   m <- as.matrix(adespatial::dbmem(as.matrix(coords), MEM.autocor = "positive", silent = TRUE))
+  if (trend) m <- cbind(.trend_surface(coords), m)
   .orthonormal(m)
 }
 
-.temporal_candidates <- function(time, type, period = NULL) {
+# Quadratic trend surface of the centred coordinates: linear terms, then squares and
+# products (x, y, x2, xy, y2 in two dimensions).
+.trend_surface <- function(coords) {
+  xy <- scale(as.matrix(coords), scale = FALSE)
+  d <- ncol(xy)
+  nm <- if (d <= 3) c("x", "y", "z")[seq_len(d)] else paste0("c", seq_len(d))
+  pq <- which(upper.tri(diag(d), diag = TRUE), arr.ind = TRUE)
+  quad <- xy[, pq[, 1], drop = FALSE] * xy[, pq[, 2], drop = FALSE]
+  m <- cbind(xy, quad)
+  colnames(m) <- paste0("trend_", c(nm, ifelse(pq[, 1] == pq[, 2], paste0(nm[pq[, 1]], "2"), paste0(nm[pq[, 1]], nm[pq[, 2]]))))
+  m
+}
+
+# Temporal candidates. The cubic polynomial of time comes first for the trend and
+# seasonal types (and whenever `trend = TRUE`), so that it takes precedence.
+.temporal_candidates <- function(time, type, period = NULL, trend = type %in% c("trend", "seasonal", "separable_seasonal")) {
   t <- as.numeric(time)
-  if (type %in% c("seasonal", "separable_seasonal")) {
+  m <- if (type %in% c("seasonal", "separable_seasonal")) {
     h <- seq_len(floor(period / 2))
-    m <- do.call(cbind, lapply(h, function(i) cbind(sin(2 * pi * i * t / period), cos(2 * pi * i * t / period))))
-    colnames(m) <- paste0(rep(c("sin", "cos"), length(h)), rep(h, each = 2), "_p", period)
-    return(.orthonormal(m))
+    hm <- do.call(cbind, lapply(h, function(i) cbind(sin(2 * pi * i * t / period), cos(2 * pi * i * t / period))))
+    colnames(hm) <- paste0(rep(c("sin", "cos"), length(h)), rep(h, each = 2), "_p", period)
+    hm
+  } else {
+    mem <- as.matrix(adespatial::dbmem(matrix(t), MEM.autocor = "positive", silent = TRUE))
+    colnames(mem) <- paste0("tMEM", seq_len(ncol(mem)))
+    mem
   }
-  mem <- as.matrix(adespatial::dbmem(matrix(t), MEM.autocor = "positive", silent = TRUE))
-  colnames(mem) <- paste0("tMEM", seq_len(ncol(mem)))
-  if (type == "trend") {
-    p <- stats::poly(t, 3)
-    colnames(p) <- paste0("trend", 1:3)
-    mem <- cbind(p, mem)
+  degree <- min(3, length(unique(t)) - 1)
+  if (trend && degree > 0) {
+    p <- stats::poly(t, degree)
+    colnames(p) <- paste0("trend", seq_len(degree))
+    m <- cbind(p, m)
   }
-  .orthonormal(mem)
+  .orthonormal(m)
 }
 
 # Forward selection over orthonormal candidates (see build_group_basis()). Uses the
-# random stream of the caller.
+# random stream of the caller. Also returns the scalogram: the share of variance each
+# candidate explains, selected or not.
 .forward_select <- function(Y, cand, kn_max, alpha, nperm) {
   n <- nrow(Y)
-  empty <- list(basis = matrix(0, n, 0), r2 = 0, terms = character(0))
+  empty <- list(basis = matrix(0, n, 0), r2 = 0, terms = character(0), scalogram = numeric(0))
   if (!ncol(cand)) return(empty)
   tss <- sum(Y^2)
   contrib <- rowSums(crossprod(cand, Y)^2)               # variance explained by each candidate
+  empty$scalogram <- stats::setNames(contrib / tss, colnames(cand))
   m <- ncol(cand)
   # global test: all candidates together
   r2_all <- sum(contrib) / tss
@@ -218,12 +260,13 @@ print.depprep_basis <- function(x, ...) {
     # pattern (one harmonic explaining most of a seasonal group) could never enter
     if (1 - (1 - explained / tss) * (n - 1) / (n - k - 1) >= adj_all) break
   }
-  list(basis = cand[, chosen, drop = FALSE], r2 = unname(explained / tss), terms = colnames(cand)[chosen])
+  list(basis = cand[, chosen, drop = FALSE], r2 = unname(explained / tss), terms = colnames(cand)[chosen],
+       scalogram = empty$scalogram)
 }
 
 # Spatio-temporal basis: marginal selections on the stacked data, then forward
 # selection among their products.
-.st_select <- function(Y, coords, index, type, period, kn_max, alpha, nperm) {
+.st_select <- function(Y, coords, index, type, period, kn_max, alpha, nperm, trend = TRUE) {
   sites <- index$site
   times <- match(index$time, sort(unique(index$time)))
   n_s <- nrow(as.matrix(coords))
@@ -236,17 +279,17 @@ print.depprep_basis <- function(x, ...) {
   by_site <- do.call(cbind, cube)                          # sites x (times * variables)
   by_time <- do.call(cbind, lapply(cube, t))               # times x (sites * variables)
   s_terms <- if (type == "temporal_common") NULL else {
-    .forward_select(scale(by_site, scale = FALSE), .spatial_candidates(coords), kn_max, alpha, nperm)$basis
+    .forward_select(scale(by_site, scale = FALSE), .spatial_candidates(coords, trend = trend), kn_max, alpha, nperm)$basis
   }
   t_terms <- if (type == "spatial_only") NULL else {
     t_type <- if (type == "separable_seasonal") "seasonal" else "ar"
-    .forward_select(scale(by_time, scale = FALSE), .temporal_candidates(sort(unique(index$time)), t_type, period),
+    .forward_select(scale(by_time, scale = FALSE), .temporal_candidates(sort(unique(index$time)), t_type, period, trend = trend),
                     kn_max, alpha, nperm)$basis
   }
   S <- cbind(const = rep(1 / sqrt(n_s), n_s), s_terms)
   Tm <- cbind(const = rep(1 / sqrt(n_t), n_t), t_terms)
   pairs <- expand.grid(s = seq_len(ncol(S)), t = seq_len(ncol(Tm)))[-1, , drop = FALSE]   # drop constant x constant
-  if (!nrow(pairs)) return(list(basis = matrix(0, nrow(Y), 0), r2 = 0, terms = character(0)))
+  if (!nrow(pairs)) return(list(basis = matrix(0, nrow(Y), 0), r2 = 0, terms = character(0), scalogram = numeric(0)))
   cand <- vapply(seq_len(nrow(pairs)), function(i) S[sites, pairs$s[i]] * Tm[times, pairs$t[i]], numeric(nrow(Y)))
   cand <- matrix(cand, nrow(Y))
   colnames(cand) <- paste(colnames(S)[pairs$s], colnames(Tm)[pairs$t], sep = ":")

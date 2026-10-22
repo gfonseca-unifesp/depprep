@@ -160,7 +160,9 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust",
     per <- stats::median(signature$period[idx], na.rm = TRUE)
     bases <- lapply(idx, function(i) do.call(build_group_basis, c(list(
       X_group = d$X[, i, drop = FALSE], type = group_type[i], period = if (is.finite(per)) round(per),
-      seed = var_seed[i]), args)))
+      seed = var_seed[i], trend = FALSE), args)))
+    # without the trend terms (coordinates, polynomial of time): generic broad directions
+    # that any large-scale field projects on, which do not tell two fields apart
     D <- outer(seq_along(idx), seq_along(idx), Vectorize(function(a, b) basis_distance(bases[[a]], bases[[b]])))
     diag(D) <- 0
     dimnames(D) <- list(signature$variable[idx], signature$variable[idx])

@@ -45,7 +45,7 @@ test_that("temporal bases: harmonics for seasonal groups, slow terms for AR grou
   s <- sim_temporal(240, g, seed = 2)
   seas <- s$group == "seas"
   b <- build_group_basis(s$X[, seas], time = s$time, type = "seasonal", period = 12, seed = 1)
-  expect_true(all(grepl("_p12$", attr(b, "terms"))))
+  expect_true(all(grepl("_p12$|^trend", attr(b, "terms"))))
   expect_true(any(attr(b, "terms") %in% c("sin1_p12", "cos1_p12")))
   expect_true(is_orthonormal(b))
   expect_error(build_group_basis(s$X[, seas], time = s$time, type = "seasonal"), "period")
@@ -91,6 +91,59 @@ test_that("the union basis contains each basis and drops redundant directions", 
   expect_lt(inside(b2), 1e-8)
   expect_equal(attr(union_basis(b1, b1), "k"), attr(b1, "k"))
   expect_warning(union_basis(b1, b2, kn_max = 0.001), "kn_max")
+})
+
+test_that("trend terms come first among the candidates and keep their shape", {
+  set.seed(1)
+  xy <- matrix(stats::runif(400), 200)
+  cand <- depprep:::.spatial_candidates(xy)
+  expect_identical(colnames(cand)[1:5], c("trend_x", "trend_y", "trend_x2", "trend_xy", "trend_y2"))
+  expect_equal(abs(stats::cor(cand[, 1], xy[, 1])), 1)
+  expect_true(startsWith(colnames(cand)[6], "MEM"))
+  expect_false(any(grepl("^trend", colnames(depprep:::.spatial_candidates(xy, trend = FALSE)))))
+  tc <- depprep:::.temporal_candidates(1:120, "seasonal", 12)
+  expect_identical(colnames(tc)[1:4], c("trend1", "trend2", "trend3", "sin1_p12"))
+  expect_false(any(grepl("^trend", colnames(depprep:::.temporal_candidates(1:120, "ar")))))
+})
+
+test_that("a spatial gradient plus a field is captured with fewer terms than without trend terms", {
+  g <- sim_groups(sim_group("a", 3, "exponential", range = 0.2))
+  s <- sim_spatial(300, g, seed = 1)
+  grad <- 2 * as.numeric(scale(s$coords[, 1] + 0.5 * s$coords[, 2]))
+  Y <- scale(s$X + grad)
+  set.seed(1); with_trend <- depprep:::.forward_select(Y, depprep:::.spatial_candidates(s$coords), 0.25, 0.05, 199)
+  set.seed(1); without <- depprep:::.forward_select(Y, depprep:::.spatial_candidates(s$coords, trend = FALSE), 0.25, 0.05, 199)
+  expect_true(all(c("trend_x", "trend_y") %in% with_trend$terms))
+  expect_lt(length(with_trend$terms), length(without$terms))
+  capture <- function(B) sum(crossprod(B, grad - mean(grad))^2) / sum((grad - mean(grad))^2)
+  expect_gt(capture(with_trend$basis), 0.999)
+  expect_gt(capture(with_trend$basis), capture(without$basis))
+  # through build_group_basis() as well
+  b <- build_group_basis(s$X + grad, coords = s$coords, type = "isotropic", seed = 1)
+  expect_true("trend_x" %in% attr(b, "terms"))
+})
+
+test_that("a seasonal series with a trend gets a trend term", {
+  set.seed(2)
+  t <- 1:240
+  x <- cbind(sin(2 * pi * t / 12) + 0.006 * t + stats::rnorm(240, sd = 0.7),
+             cos(2 * pi * t / 12) + 0.006 * t + stats::rnorm(240, sd = 0.7))
+  b <- build_group_basis(x, time = t, type = "seasonal", period = 12, seed = 1)
+  expect_true("trend1" %in% attr(b, "terms"))
+  expect_true(all(c("sin1_p12", "cos1_p12") %in% attr(b, "terms")))
+  expect_true(is_orthonormal(b))
+})
+
+test_that("the basis keeps the scalogram of every candidate", {
+  g <- sim_groups(sim_group("long", 4, "exponential", range = 0.5))
+  s <- sim_spatial(200, g, seed = 3)
+  b <- build_group_basis(s$X, coords = s$coords, type = "isotropic", seed = 1)
+  sg <- attr(b, "scalogram")
+  expect_identical(names(sg), colnames(depprep:::.spatial_candidates(s$coords)))
+  expect_true(all(attr(b, "terms") %in% names(sg)))
+  expect_true(all(sg >= 0) && sum(sg) <= 1 + 1e-8)
+  expect_equal(sum(sg[attr(b, "terms")]), attr(b, "r2"))
+  expect_length(attr(build_group_basis(s$X, coords = s$coords, type = "none"), "scalogram"), 0)
 })
 
 test_that("capture and absorption measure what a basis removes", {
