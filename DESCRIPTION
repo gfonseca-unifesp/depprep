@@ -18,7 +18,6 @@ Suggests:
     ggplot2,
     quarto,
     sf,
-    SpatialBSS,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Imports: 
@@ -29,6 +28,7 @@ Imports:
     Matrix,
     mclust,
     parallel,
+    SpatialBSS,
     spdep,
     stats,
     utils,
