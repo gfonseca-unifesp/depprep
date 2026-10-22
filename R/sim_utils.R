@@ -9,7 +9,7 @@
 # Independent random streams, one per component, so that changing one component
 # (for example the residuals) leaves the others unchanged.
 .streams <- c(coords = 1L, large = 2L, residual = 3L, classes = 4L, bootstrap = 5L, permutation = 6L,
-              basis = 7L, subsample = 8L)
+              basis = 7L, subsample = 8L, downstream = 9L)
 
 # Evaluate `expr` with an L'Ecuyer-CMRG stream derived from `seed` and restore the
 # caller's random number generator afterwards.
