@@ -13,6 +13,8 @@ correct(
   bases = NULL,
   mode = NULL,
   scope = NULL,
+  data_basis = c("union", "own"),
+  period = NULL,
   kn_max = 0.3,
   seed = 1L
 )
@@ -27,25 +29,38 @@ group of each variable (\code{"none"} for variables without dependence).}
 \code{\link[=diagnose_variables]{diagnose_variables()}}.}
 
 \item{bases}{Optional named list with one basis per group (from
-\code{\link[=build_group_basis]{build_group_basis()}}); built when \code{NULL}.}
+\code{\link[=build_group_basis]{build_group_basis()}}), or one basis per dependent variable (named by variable)
+when \code{scope = "variables"}; built when \code{NULL}.}
 
 \item{mode}{\code{"conditional"}, \code{"whiten"} or \code{"scale"}; \code{NULL} for the default of the
 data family (see above).}
 
-\item{scope}{\code{"global"} or \code{"groups"}; \code{NULL} for the default (\code{"global"} for the
-conditional and scale modes in spatial and temporal data, \code{"groups"} otherwise and
-whenever \code{bases} is given).}
+\item{scope}{\code{"global"}, \code{"groups"} or \code{"variables"}; \code{NULL} for the default
+(\code{"global"} for the conditional and scale modes in spatial and temporal data,
+\code{"groups"} otherwise and whenever \code{bases} is given).}
 
-\item{kn_max}{Share of degrees of freedom above which a union of bases is flagged.}
+\item{data_basis}{Basis of each column of the data matrix \code{X} in the conditional
+mode: \code{"union"} (default, the union of all bases, the same for every variable) or
+\code{"own"} (the variable's own basis: its group's basis, or its own selection under
+\code{scope = "variables"}).}
+
+\item{period}{Seasonal period for the seasonal groups: one number, or a vector named
+by group. When \code{NULL}, the periods recorded in \code{grouping} by \code{\link[=group_regimes]{group_regimes()}} are
+used; a seasonal group without any period gets 12, with a warning.}
+
+\item{kn_max}{Share of degrees of freedom above which a union of bases is flagged;
+under \code{scope = "variables"}, the cap of the union of the variables' bases.}
 
 \item{seed}{Seed of the basis selection (when \code{bases} is \code{NULL}).}
 }
 \value{
 An object of class \code{depprep_corrected}: a list with \code{R}, \code{R_pairwise}
 (before the projection), \code{adjustment}, \code{X} (residuals or whitened data; \code{NULL} in
-scale mode), \code{R_scale} (scale mode), \code{bases}, \code{kn} (by group), \code{union_kn} (by
-pair of groups), \code{warnings}, \code{mode}, \code{scope} and \code{group} (\code{"global"} for every
-dependent variable under the global scope).
+scale mode), \code{R_scale}, \code{r2_scale}, \code{p_scale}, \code{bands} and \code{scalogram} (scale
+mode), \code{bases}, \code{variable_bases} (scope \code{"variables"}), \code{kn} (by group),
+\code{union_kn} (by pair of groups), \code{warnings}, \code{mode}, \code{scope}, \code{data_basis} and
+\code{group} (\code{"global"} for every dependent variable under the global scope, \code{"union"}
+under the variables scope).
 }
 \description{
 Removes the large-scale structure of each group of variables with the group's own
@@ -56,8 +71,8 @@ variables. Two outputs, as fixed by the project's decision P1:
 basis, across groups with the union of the two bases — and projected to the
 nearest valid correlation matrix (\code{adjustment} records how much it moved); for
 PCA and other methods that take a correlation matrix;
-\item \code{X}: a data matrix of residuals on the union of all group bases; for k-means,
-SOM and MDS on observations.
+\item \code{X}: a data matrix of residuals on the union of all group bases (\code{data_basis = "union"}), or of each variable on its own basis (\code{data_basis = "own"}); for
+k-means, SOM and MDS on observations.
 }
 }
 \details{
@@ -69,15 +84,32 @@ group — a variogram model pooled over the group's variables in space, an AR mo
 in time (after removing the trend or seasonal terms of the group's basis), and both
 (separably) in space-time. Uses the whole covariance, not only a basis, which can
 matter for rough processes. Pairs across groups use each group's own whitening;
-\item \code{"scale"}: one correlation matrix per scale band (broad, medium, fine thirds of the
-Moran eigenvector maps, or of the temporal ones), from the projection of every
-variable on the band; spatial and temporal data only.
+\item \code{"scale"}: one correlation matrix per scale band, from the projection of every
+variable on the band; spatial and temporal data only. The bands are made of the
+functions the bases selected (Borcard et al. 2004): the trend terms form their own
+band, and the other functions, ordered from broad to fine (the order of the Moran
+eigenvector maps in space; the wavelength in time, read from the lag-one
+autocorrelation of each function, which assumes a regular series), are split into
+up to three bands (broad, medium, fine) at gaps of the scalogram, a gap being a run
+of candidates that were not selected across which the scale changes by at least a
+factor 1.25. Among the gaps, the cuts are those that leave the least spread of
+log-scale within the bands, each function weighted by the variance it explains, so
+that a function with little signal does not make a band of its own. The
+share of variance of each variable in each band (\code{r2_scale}) is tested with an F
+test given all selected functions (\code{p_scale}); bands where no variable has signal
+(Holm adjustment over the variables) are flagged in \code{warnings}.
 }
 
-Scope of the bases: \code{"groups"} (one basis per group, unions across groups) or
+Scope of the bases: \code{"groups"} (one basis per group, unions across groups),
 \code{"global"} (one basis for all dependent variables: the union of the bases selected on
-all of them for each regime type present). Variables without dependence are never
-corrected among themselves.
+all of them for each regime type present) or \code{"variables"} (each dependent variable
+selects its own basis, and the union of these bases, capped at \code{kn_max}, is the
+shared basis of all of them; Peres-Neto and Legendre 2010). With \code{"variables"}, \code{R}
+uses the union for every pair, so the bases of two variables never differ; with
+\code{data_basis = "own"} the data matrix \code{X} instead holds the residuals of each
+variable on its own basis (the "independent" approach of the stage 6 pilot), which
+removes less of each variable but no longer has one basis for all. Variables
+without dependence are never corrected among themselves.
 
 Defaults (decision D7, calibrated on the stage 5 simulations, where all basis
 approaches gave nearly the same error): spatial and temporal data use the conditional
@@ -93,4 +125,13 @@ s <- sim_spatial(300, g, R_true = make_R_true(g, "blocks", within = 0.5, between
 gr <- group_regimes(diagnose_variables(s, nsim = 99))
 cr <- correct(s, gr)
 round(cr$R, 2)
+}
+\references{
+Borcard, D., Legendre, P., Avois-Jacquet, C. and Tuomisto, H. (2004).
+Dissecting the spatial structure of ecological data at multiple scales. Ecology 85,
+1826-1832.
+
+Peres-Neto, P. R. and Legendre, P. (2010). Estimating and controlling for spatial
+structure in the study of ecological communities. Global Ecology and Biogeography
+19, 174-184.
 }
