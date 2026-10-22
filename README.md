@@ -241,12 +241,17 @@ of two groups for the pairs of variables across them.
 
 ```r
 gr <- group_regimes(diagnose_variables(sim))
-cr <- correct(sim, gr)                     # one basis per group, unions across groups
+cr <- correct(sim, gr)                     # default: one global basis (space or time)
 cr$R                                       # corrected correlation matrix (for PCA)
 head(cr$X)                                 # corrected data (for k-means, SOM, MDS)
 verify(cr, sim)                            # what was removed and what was kept
-correct(sim, gr, mode = "whiten")          # whitening, the better choice in space-time
+correct(sim, gr, scope = "groups")         # one basis per group, unions across groups
 ```
+
+Defaults: spatial and temporal data are corrected with one global basis (the
+simplest choice; in the simulations every basis approach gave nearly the same error);
+spatio-temporal data are whitened group by group (`mode = "whiten"`), which halved the
+error there. Variables without dependence are never corrected among themselves.
 
 `correct()` has three modes: `"conditional"` (residuals on the group bases),
 `"whiten"` (the observations are whitened with each group's estimated covariance) and
