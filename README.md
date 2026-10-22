@@ -3,8 +3,9 @@
 **Dependence-aware preprocessing for multivariate exploratory analysis.**
 
 > **Status:** early development — stages 0 to 5 are complete (simulation generators, the
-> diagnosis of each variable, grouping and shared bases, the correction); stage 6 (pilot
-> with PCA, MDS, k-means and SOM) is in progress. Do not use the package on real data yet.
+> diagnosis of each variable, grouping and shared bases, the correction); the stage 6
+> pilot with PCA, MDS, k-means and SOM has run and is under review. Do not use the
+> package on real data yet.
 
 ---
 
@@ -83,7 +84,7 @@ from recorded seeds into `results/` on your machine.
 | 3 | Diagnose each variable's dependence | `R/diagnose*.R`, `R/classify.R`, `analysis/03_*` | done |
 | 4 | Group regimes and build shared bases | `R/group.R`, `R/basis.R`, `analysis/04_*` | done |
 | 5 | Correct, and measure the mechanism (H2a, H2b) | `R/correct.R`, `R/verify.R`, `analysis/05*` | done |
-| 6 | Pilot with PCA, MDS, k-means and SOM | — | in progress |
+| 6 | Pilot with PCA, MDS, k-means and SOM | `R/downstream.R`, `R/comparators.R`, `analysis/06*` | under review |
 | 7 | Full simulations | — | planned |
 
 ### Stage 1 — real-data case study (Foz do Amazonas)
@@ -130,6 +131,14 @@ add spatial autocorrelation that belongs to the interpolation, not to the proces
 | `analysis/05b_correction.R` | The correction on the grid (D4 plus smooth fields and "same regime, different fields"): eight approaches, from no correction to the true grouping, with the error of the residual correlations, capture, degrees of freedom and time |
 | `analysis/05c_whitening_st.R` | Why whitening helps in space-time: its spatial and temporal parts, by kind of shared process |
 | `analysis/05_correction_figures.R` | The didactic scheme, example correlation matrices, and the figures of the three scripts |
+
+### Stage 6 — pilot with the four exploratory methods
+
+| Script | What it produces |
+| --- | --- |
+| `analysis/06_pilot.R` | Twelve pilot scenarios (spatial rough and smooth, temporal, space-time; with no association, with true blocks and random classes, and with contiguous classes), 20 replicates each: every correction approach followed by PCA, MDS (Euclidean and Gower), k-means and SOM, scored with `run_downstream()`; SBSS and MAF (`decorrelate_latent()`) as comparators in space; paired contrasts and the replicates needed for stage 7 |
+| `analysis/06_pilot_figures.R` | A didactic k-means example, spurious patterns, recovery of the truth, contiguous classes, the temporal default and the replicates needed |
+| `analysis/06b_pilot_absorption.R` | How much of the class signal each basis removes, against what its size alone implies |
 
 ## 5. Getting started
 
@@ -263,7 +272,9 @@ remove it: at scales finer than the basis, a shared process and a genuine associ
 leave the same trace. In space-time, observation over time separates them better, and
 whitening reduces the error substantially.
 
-## 10. Known limits: why purely spatial regimes are hard to tell apart
+## 10. Known limits
+
+### Why purely spatial regimes are hard to tell apart
 
 In the simulations the diagnosis and the grouping work well in time and in space-time,
 but much less well for purely spatial data with up to a few hundred sites. The reasons
@@ -294,6 +305,23 @@ scale costs little, because they receive similar bases; the tool flags these var
 as ambiguous (unstable over subsamples) instead of hiding the problem; and data observed
 repeatedly in time (space-time) carry much more information about each spatial regime
 than a single map. Results: `analysis/03_*` and `analysis/04_*`.
+
+### What the correction can and cannot do for the exploratory methods (stage 6 pilot)
+
+- **It removes most spurious patterns.** Without correction, MDS configurations and
+  SOM maps reproduce the positions of the samples, and k-means finds groups in data
+  without classes (mostly in time). After correction these patterns almost disappear.
+- **It cannot remove shared structure finer than its basis.** With rough spatial fields
+  the first PCA axis stays above the broken-stick expectation after any basis
+  correction: the fine part of the shared field is common to all variables, and no
+  method that uses only the positions of the samples can tell it from a real
+  association.
+- **A large shared basis also removes part of the real signal.** When true classes are
+  scattered among the samples, a basis selected on all variables at once takes away a
+  share of every variable's class signal, roughly in proportion to its size. A small
+  basis per variable, or whitening in time, keeps the classes.
+- **Classes that are contiguous in space or time are removed by design.** There the
+  classes are the large-scale structure. Keeping only the broad scales preserves them.
 
 ## 11. Reproducibility
 
