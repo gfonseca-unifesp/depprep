@@ -9,8 +9,9 @@ default_thresholds()
 \value{
 A list with:
 \itemize{
-\item \code{p_dependence}: Moran (spatial) or Ljung-Box (temporal) p-value below which a
-variable is declared dependent;
+\item \code{p_dependence}: p-value below which a variable is declared dependent: the
+combined nearest-neighbour Moran and Moran-correlogram test in space
+(\code{dependence_p}; \code{moran_p} when absent), Ljung-Box in time;
 \item \code{aniso_ratio}: ratio between directional ranges above which a spatial variable is
 declared anisotropic;
 \item \code{seasonal_strength}: share of variance at the dominant seasonal period above which

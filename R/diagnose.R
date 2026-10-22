@@ -11,10 +11,15 @@
 #' object can be passed directly as `X`.
 #'
 #' Columns of the result (`NA` when not applicable to the family):
-#' * spatial: `moran_I`, `moran_p` (k nearest neighbours), `vario_model` (`"Exp"` or
-#'   `"Sph"`), `nugget`, `sill`, `range` (practical range), `nugget_ratio`,
-#'   `aniso_ratio` and `aniso_direction` (directional variograms; gstat angle,
-#'   clockwise from north);
+#' * spatial: `moran_I`, `moran_p` (k nearest neighbours), `correlogram_p` (Moran
+#'   correlogram over distance classes, Bonferroni global test), `dependence_p` (the
+#'   two tests combined, Bonferroni; used by [classify_regime()]), `trend_r2`
+#'   (R-squared of a linear trend surface), `vario_model` (`"Exp"` or `"Sph"`),
+#'   `nugget`, `sill`, `range` (practical range), `nugget_ratio`, `aniso_ratio` and
+#'   `aniso_direction` (directional variograms; gstat angle, clockwise from north).
+#'   Following Legendre & Legendre (2012, ch. 13), the variogram and the anisotropy
+#'   are computed on the residuals of the trend surface when `trend_r2` exceeds
+#'   `detrend_r2`;
 #' * temporal (Legendre & Legendre 2012, ch. 12: trend and cycle are removed before
 #'   the persistence is measured): `acf1`, `phi` (AR(1) coefficient) and `ar_order`
 #'   (AIC) on the residuals of a linear trend and of the cycle (when significant);
@@ -41,6 +46,11 @@
 #'   which is optimistic in small samples).
 #' @param perm_seed Seed of the permutations; each variable gets its own stream, so a
 #'   signature does not depend on the other variables and is reproducible.
+#' @param detrend_r2 R-squared of the spatial trend surface above which the variogram
+#'   and the anisotropy are computed on its residuals.
+#' @param normal_scores Diagnose on normal scores (ranks mapped to normal quantiles):
+#'   `"counts"` (only non-negative integer variables, the default), `"all"` or
+#'   `"none"`. Only the diagnosis uses them; the data are not changed.
 #' @param period Known seasonal period (in time steps) of the temporal and
 #'   spatio-temporal families; `NULL` searches it in the data.
 #' @return A data frame of class `depprep_signature`, one row per variable.
@@ -51,7 +61,9 @@
 #' diagnose_variables(s)[, c("variable", "moran_p", "range", "nugget_ratio")]
 #' @export
 diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 0, seed = NULL, k = 8,
-                               nsim = 499, perm_seed = 1L, period = NULL) {
+                               nsim = 499, perm_seed = 1L, period = NULL, detrend_r2 = 0.4,
+                               normal_scores = c("counts", "none", "all")) {
+  normal_scores <- match.arg(normal_scores)
   if (inherits(X, "depprep_sim")) {
     sim <- X
     X <- sim$X
@@ -79,13 +91,20 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
 
   rows <- lapply(seq_len(ncol(X)), function(j) {
     z <- X[, j]
+    if (normal_scores == "all" || (normal_scores == "counts" && .is_count(z))) z <- .normal_scores(z)
     out <- .empty_signature()
     if (family == "spatial") {
       m <- .with_stream(perm_seed + j, .streams[["permutation"]], .moran(z, lw, nsim))
-      f <- .fit_variogram(coords, z)
+      cg <- .with_stream(perm_seed + j, .streams[["permutation"]], .correlogram_test(coords, z, nsim = nsim))
+      tr <- .spatial_trend(coords, z)
+      zv <- if (tr$r2 > detrend_r2) tr$resid else z
+      f <- .fit_variogram(coords, zv)
       out[c("moran_I", "moran_p")] <- as.list(m)
+      out$correlogram_p <- cg$p
+      out$dependence_p <- min(1, 2 * min(m[["moran_p"]], cg$p, na.rm = TRUE))
+      out$trend_r2 <- tr$r2
       out[c("vario_model", "nugget", "sill", "range", "nugget_ratio")] <- f[c("vario_model", "nugget", "sill", "range", "nugget_ratio")]
-      out[c("aniso_ratio", "aniso_direction")] <- as.list(.anisotropy(coords, z, f))
+      out[c("aniso_ratio", "aniso_direction")] <- as.list(.anisotropy(coords, zv, f))
       if (B > 0 && !is.null(f$fit)) {
         out[c("range_se", "range_lo", "range_hi")] <- as.list(.with_stream(seed + j, .streams[["bootstrap"]],
                                                                       .boot_range(coords, f$fit, B)))
@@ -113,7 +132,7 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
 
 # One row with every signature column, all missing.
 .empty_signature <- function() {
-  num <- c("moran_I", "moran_p", "nugget", "sill", "range", "nugget_ratio", "aniso_ratio", "aniso_direction",
+  num <- c("moran_I", "moran_p", "correlogram_p", "dependence_p", "nugget", "sill", "range", "nugget_ratio", "aniso_ratio", "aniso_direction",
            "acf1", "phi", "ar_order", "ljung_p", "period", "period_strength", "period_p", "trend_r2",
            "shift_indicator", "shift_direction",
            "range_se", "range_lo", "range_hi", "phi_se", "phi_lo", "phi_hi")

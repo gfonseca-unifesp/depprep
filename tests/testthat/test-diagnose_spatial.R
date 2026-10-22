@@ -67,3 +67,32 @@ test_that("the permutation Moran test keeps false positives at the nominal level
   expect_lt(mean(p < 0.05), 0.08)
   expect_gt(mean(p < 0.05), 0.02)
 })
+
+test_that("a linear gradient is measured and removed before the variogram", {
+  g <- sim_groups(sim_group("f", 1, "exponential", range = 0.1, large_scale_share = 0.8))
+  s <- sim_spatial(400, g, seed = 101)
+  z <- s$X[, 1]
+  zg <- z + 6 * (s$coords[, 1] - 0.5) * stats::sd(z)
+  d <- diagnose_variables(cbind(z = z, zg = zg), coords = s$coords, nsim = 99)
+  expect_gt(d$trend_r2[2], 0.4)
+  expect_lt(d$trend_r2[1], 0.1)
+  expect_lt(abs(log(d$range[2] / d$range[1])), log(1.5))   # same range with and without the gradient
+})
+
+test_that("the Moran correlogram keeps the combined test near the nominal level", {
+  g0 <- sim_groups(sim_group("none", 10, "none"))
+  d <- do.call(rbind, lapply(1:6, function(i) diagnose_variables(sim_spatial(100, g0, seed = 200 + i), nsim = 199, perm_seed = i)))
+  expect_lt(mean(d$dependence_p < 0.05), 0.12)
+  g1 <- sim_groups(sim_group("a", 3, "exponential", range = 0.5))
+  d1 <- diagnose_variables(sim_spatial(200, g1, seed = 3), nsim = 199)
+  expect_true(all(d1$correlogram_p < 0.05))
+  expect_true(all(d1$dependence_p <= 2 * pmin(d1$moran_p, d1$correlogram_p) + 1e-12))
+})
+
+test_that("counts are diagnosed on normal scores", {
+  expect_true(depprep:::.is_count(c(0, 1, 5, 2, 0, 3)))
+  expect_false(depprep:::.is_count(c(0.5, 1, 2)))
+  z <- c(0, 0, 1, 7, 30)
+  expect_equal(rank(depprep:::.normal_scores(z)), rank(z))
+  expect_lt(abs(mean(depprep:::.normal_scores(stats::rpois(500, 1)))), 0.1)
+})

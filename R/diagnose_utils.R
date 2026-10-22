@@ -23,6 +23,47 @@
   c(moran_I = unname(t$estimate[["Moran I statistic"]]), moran_p = t$p.value)
 }
 
+# Moran correlogram (Legendre & Legendre 2012, §13.1.1): Moran's I in distance classes
+# of equal frequency up to half the largest distance, each tested by permutation
+# (two-sided: structure can be positive or negative at a given distance). The global
+# p-value is the Bonferroni one, the number of classes times the smallest p-value
+# (Oden 1984). It sees structure the nearest neighbours miss: patches smaller than the
+# sampling interval, or structure at intermediate distances.
+.correlogram_test <- function(coords, z, n_classes = 8, nsim = 499) {
+  coords <- as.matrix(coords)
+  D <- stats::dist(coords)
+  d <- as.vector(D)
+  br <- unique(stats::quantile(d[d <= max(d) / 2], seq(0, 1, length.out = n_classes + 1), names = FALSE))
+  br[1] <- 0
+  res <- t(vapply(seq_len(length(br) - 1), function(i) {
+    # distance-class graphs are often split in sub-graphs; spdep warns, harmlessly
+    nb <- suppressWarnings(spdep::dnearneigh(coords, br[i], br[i + 1], bounds = c("GT", "LE")))
+    if (sum(spdep::card(nb)) == 0) return(c(I = NA_real_, p = NA_real_))
+    lw <- suppressWarnings(spdep::nb2listw(nb, style = "B", zero.policy = TRUE))
+    m <- spdep::moran.mc(z, lw, nsim = max(nsim, 1), zero.policy = TRUE, alternative = "two.sided")
+    c(I = unname(m$statistic), p = m$p.value)
+  }, numeric(2)))
+  ok <- is.finite(res[, "p"])
+  list(classes = data.frame(lower = utils::head(br, -1), upper = br[-1], moran_I = res[, "I"], p = res[, "p"]),
+       p = if (any(ok)) min(1, sum(ok) * min(res[ok, "p"])) else NA_real_)
+}
+
+# Linear trend surface in the coordinates (Legendre & Legendre 2012, §13.1): its
+# R-squared and the residuals. A gradient has no sill, so a variogram computed on it
+# reads the trend as a long range or as anisotropy.
+.spatial_trend <- function(coords, z) {
+  X <- scale(as.matrix(coords), scale = FALSE)
+  zc <- z - mean(z)
+  e <- stats::lm.fit(X, zc)$residuals
+  list(r2 = if (sum(zc^2) > 0) 1 - sum(e^2) / sum(zc^2) else 0, resid = e)
+}
+
+# Normal scores (ranks mapped to normal quantiles), used only for the diagnosis of
+# skewed variables such as counts: kurtosis lowers the power of correlograms and
+# variograms (Legendre & Legendre 2012, §13.1.1).
+.normal_scores <- function(z) stats::qnorm((rank(z) - 0.5) / length(z))
+.is_count <- function(z) all(is.finite(z)) && all(z >= 0) && all(abs(z - round(z)) < 1e-8) && length(unique(z)) > 2
+
 # gstat::fit.variogram() prints advice when a fit does not converge; those cases are
 # handled as missing values, so the printout is silenced.
 .quiet_fit <- function(v, model) {

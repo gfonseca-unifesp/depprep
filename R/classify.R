@@ -5,8 +5,9 @@
 #' thresholds are the ones with the best accuracy on the threshold curves.
 #'
 #' @return A list with:
-#' * `p_dependence`: Moran (spatial) or Ljung-Box (temporal) p-value below which a
-#'   variable is declared dependent;
+#' * `p_dependence`: p-value below which a variable is declared dependent: the
+#'   combined nearest-neighbour Moran and Moran-correlogram test in space
+#'   (`dependence_p`; `moran_p` when absent), Ljung-Box in time;
 #' * `aniso_ratio`: ratio between directional ranges above which a spatial variable is
 #'   declared anisotropic;
 #' * `seasonal_strength`: share of variance at the dominant seasonal period above which
@@ -42,7 +43,8 @@ classify_regime <- function(signature, thresholds = default_thresholds()) {
   th <- utils::modifyList(default_thresholds(), thresholds)
   s <- signature
   ge <- function(x, t) !is.na(x) & x > t
-  sp_dep <- !is.na(s$moran_p) & s$moran_p < th$p_dependence
+  sp_p <- if ("dependence_p" %in% names(s)) ifelse(is.na(s$dependence_p), s$moran_p, s$dependence_p) else s$moran_p
+  sp_dep <- !is.na(sp_p) & sp_p < th$p_dependence
   tm_dep <- !is.na(s$ljung_p) & s$ljung_p < th$p_dependence
   out <- ifelse(s$family == "spatial",
            ifelse(!sp_dep, "none", ifelse(ge(s$aniso_ratio, th$aniso_ratio), "anisotropic", "isotropic")),

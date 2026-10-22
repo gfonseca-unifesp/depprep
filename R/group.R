@@ -183,7 +183,7 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust",
   lg <- function(x) log(pmax(x, 1e-6))
   Z <- switch(fam,
     spatial = cbind(log_range = lg(sig$range), nugget_ratio = sig$nugget_ratio, moran_I = sig$moran_I,
-                    log_aniso = lg(sig$aniso_ratio)),
+                    log_aniso = lg(sig$aniso_ratio), trend_r2 = sig$trend_r2),
     temporal = cbind(phi = sig$phi, seasonal_strength = sig$period_strength, trend_r2 = sig$trend_r2),
     spatiotemporal = cbind(log_range = lg(sig$range), nugget_ratio = sig$nugget_ratio, moran_I = sig$moran_I,
                            phi = sig$phi, seasonal_strength = sig$period_strength, trend_r2 = sig$trend_r2,

@@ -14,7 +14,9 @@ diagnose_variables(
   k = 8,
   nsim = 499,
   perm_seed = 1L,
-  period = NULL
+  period = NULL,
+  detrend_r2 = 0.4,
+  normal_scores = c("counts", "none", "all")
 )
 }
 \arguments{
@@ -41,6 +43,13 @@ signature does not depend on the other variables and is reproducible.}
 
 \item{period}{Known seasonal period (in time steps) of the temporal and
 spatio-temporal families; \code{NULL} searches it in the data.}
+
+\item{detrend_r2}{R-squared of the spatial trend surface above which the variogram
+and the anisotropy are computed on its residuals.}
+
+\item{normal_scores}{Diagnose on normal scores (ranks mapped to normal quantiles):
+\code{"counts"} (only non-negative integer variables, the default), \code{"all"} or
+\code{"none"}. Only the diagnosis uses them; the data are not changed.}
 }
 \value{
 A data frame of class \code{depprep_signature}, one row per variable.
@@ -59,10 +68,15 @@ object can be passed directly as \code{X}.
 
 Columns of the result (\code{NA} when not applicable to the family):
 \itemize{
-\item spatial: \code{moran_I}, \code{moran_p} (k nearest neighbours), \code{vario_model} (\code{"Exp"} or
-\code{"Sph"}), \code{nugget}, \code{sill}, \code{range} (practical range), \code{nugget_ratio},
-\code{aniso_ratio} and \code{aniso_direction} (directional variograms; gstat angle,
-clockwise from north);
+\item spatial: \code{moran_I}, \code{moran_p} (k nearest neighbours), \code{correlogram_p} (Moran
+correlogram over distance classes, Bonferroni global test), \code{dependence_p} (the
+two tests combined, Bonferroni; used by \code{\link[=classify_regime]{classify_regime()}}), \code{trend_r2}
+(R-squared of a linear trend surface), \code{vario_model} (\code{"Exp"} or \code{"Sph"}),
+\code{nugget}, \code{sill}, \code{range} (practical range), \code{nugget_ratio}, \code{aniso_ratio} and
+\code{aniso_direction} (directional variograms; gstat angle, clockwise from north).
+Following Legendre & Legendre (2012, ch. 13), the variogram and the anisotropy
+are computed on the residuals of the trend surface when \code{trend_r2} exceeds
+\code{detrend_r2};
 \item temporal (Legendre & Legendre 2012, ch. 12: trend and cycle are removed before
 the persistence is measured): \code{acf1}, \code{phi} (AR(1) coefficient) and \code{ar_order}
 (AIC) on the residuals of a linear trend and of the cycle (when significant);
