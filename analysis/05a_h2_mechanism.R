@@ -102,8 +102,9 @@ one_d11 <- function(r, same, range, smoothness, n, rho) {
   if (same) L[, 2] <- L[, 1]
   E <- sim_residuals(coords, 2, rho, "white")
   X <- sqrt(0.6) * L + sqrt(0.4) * E
-  b1 <- build_group_basis(X[, 1, drop = FALSE], coords = coords, type = "isotropic", seed = seed)
-  b2 <- build_group_basis(X[, 2, drop = FALSE], coords = coords, type = "isotropic", seed = seed + 1e5)
+  # without trend terms, as group_regimes() builds the individual bases of the split (D14)
+  b1 <- build_group_basis(X[, 1, drop = FALSE], coords = coords, type = "isotropic", seed = seed, trend = FALSE)
+  b2 <- build_group_basis(X[, 2, drop = FALSE], coords = coords, type = "isotropic", seed = seed + 1e5, trend = FALSE)
   data.frame(replicate = r, same_field = same, range = range, smoothness = smoothness, n = n, rho = rho, seed = seed,
              distance = basis_distance(b1, b2), k1 = ncol(b1), k2 = ncol(b2))
 }
