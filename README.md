@@ -272,6 +272,32 @@ remove it: at scales finer than the basis, a shared process and a genuine associ
 leave the same trace. In space-time, observation over time separates them better, and
 whitening reduces the error substantially.
 
+### The basis is feature engineering: three rules for your own features
+
+The basis of the correction is a set of positional features (trend surfaces, Moran
+eigenvector maps, harmonics, autoregressive lags). In predictive regression, features
+that explain more are better. Here they are not: features that explain more of the
+large scale also remove more of the association you want to keep, which is why the
+bases are selected with tests and a cap on k/n. Three consequences for the features
+you build yourself:
+
+1. **Build derived features before the diagnosis.** Anomalies from a climatology,
+   indices (such as NDVI), ratios and transformations change a variable's dependence
+   regime: an anomaly is already a seasonal correction, and a ratio mixes the regimes
+   of its two variables. Diagnose and correct the variables you will actually analyse.
+2. **Do not build features from correlations between variables before correcting**
+   (for example, PCA axes): the diagnosis uses each variable alone, so that the
+   associations it is meant to estimate are not used twice.
+3. **Reuse the basis in a downstream model.** If a regression on the corrected data
+   uses positional features (smooths of the coordinates, Moran maps, lags), use the
+   basis that `correct()` returns (`cr$bases`). Different positional features bring
+   back the error of correcting two variables with different bases.
+
+With autocorrelated data, positional features also inflate the apparent explanatory
+power of predictive models under random validation; blocked validation in space or
+time removes much of it (Roberts et al. 2017, Ecography 40:913-929; Ploton et al. 2020,
+Nature Communications 11:4540).
+
 ## 10. Known limits
 
 ### Why purely spatial regimes are hard to tell apart
