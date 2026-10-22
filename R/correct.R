@@ -346,12 +346,28 @@ print.depprep_corrected <- function(x, ...) {
   terms <- if (is.null(colnames(M))) paste0("u", seq_len(ncol(M))) else colnames(M)
   Z <- scale(as.matrix(Y)); Z[!is.finite(Z)] <- 0
   o <- order(-rowSums(crossprod(M, Z)^2))
-  q <- qr(M[, o, drop = FALSE], tol = 1e-7)               # repeated terms are dropped here
+  M <- M[, o, drop = FALSE]; terms <- terms[o]
+  keep <- .distinct_columns(M, terms)                     # many variables select the same functions
+  M <- M[, keep, drop = FALSE]; terms <- terms[keep]
+  if (ncol(M) >= n) { M <- M[, seq_len(n - 1), drop = FALSE]; terms <- terms[seq_len(n - 1)] }  # QR needs ncol < n
+  q <- qr(M, tol = 1e-7)                                  # dependent directions are dropped here
   k <- min(q$rank, floor(kn_max * n))
-  B <- .as_basis(qr.Q(q)[, seq_len(k), drop = FALSE], "union", n, NA_real_, terms[o][q$pivot[seq_len(k)]])
+  B <- .as_basis(qr.Q(q)[, seq_len(k), drop = FALSE], "union", n, NA_real_, terms[q$pivot[seq_len(k)]])
   attr(B, "rank") <- q$rank
   attr(B, "capped") <- q$rank > k
   B
+}
+
+# Columns to keep so that no column repeats an earlier one. Same-named columns are
+# compared numerically: a name can stand for different columns (a temporal map is
+# orthogonalised against the trend terms only in the "trend" type).
+.distinct_columns <- function(M, terms) {
+  first <- match(terms, terms)
+  keep <- rep(TRUE, ncol(M))
+  for (j in which(first != seq_along(terms))) {
+    if (max(abs(M[, j] - M[, first[j]])) < 1e-8) keep[j] <- FALSE
+  }
+  keep
 }
 
 # Scale mode: projection of every variable on bands of the selected functions (see
@@ -362,7 +378,7 @@ print.depprep_corrected <- function(x, ...) {
   warn <- character(0)
   S <- do.call(cbind, c(list(matrix(0, n, 0)), lapply(unname(parts), unclass)))   # selected functions, each once
   if (is.null(colnames(S))) colnames(S) <- paste0("u", seq_len(ncol(S)))
-  S <- S[, !duplicated(colnames(S)), drop = FALSE]
+  S <- S[, .distinct_columns(S, colnames(S)), drop = FALSE]
   trend <- grepl("^trend", colnames(S))
   axis <- .scale_axis(colnames(S)[!trend], family, time, unique(unlist(lapply(parts, function(b) {
     p <- sub(".*_p", "", grep("_p[0-9.]+$", attr(b, "terms"), value = TRUE)); as.numeric(p)

@@ -215,3 +215,23 @@ test_that("defaults follow decision D7: global basis in space and time, whitenin
   expect_identical(cw$mode, "whiten")
   expect_identical(cw$scope, "groups")
 })
+
+test_that("the union of the variable bases works when it has more columns than sites", {
+  g <- sim_groups(sim_group("a", 12, "exponential", range = 0.5), sim_group("b", 12, "exponential", range = 0.1))
+  s <- sim_spatial(60, g, seed = 11)
+  grp <- stats::setNames(rep("g1", ncol(s$X)), colnames(s$X))
+  cand <- depprep:::.spatial_candidates(s$coords)
+  vb <- lapply(seq_len(ncol(s$X)), function(j) {             # overlapping selections, as variables make
+    cols <- depprep:::.with_stream(j, 1, sort(sample(ncol(cand), 15)))
+    structure(cand[, cols], class = "depprep_basis", type = "isotropic", terms = colnames(cand)[cols])
+  })
+  names(vb) <- colnames(s$X)
+  expect_gt(sum(vapply(vb, ncol, 0)), nrow(s$X))          # wider than tall before the union
+  cr <- correct(s$X, grp, coords = s$coords, bases = vb, scope = "variables", kn_max = 0.3)
+  u <- cr$bases$union
+  expect_true(all(is.finite(unclass(u))))
+  expect_lte(ncol(u), floor(0.3 * nrow(s$X)))
+  expect_equal(crossprod(unclass(u)), diag(ncol(u)), tolerance = 1e-8, ignore_attr = TRUE)
+  M <- cbind(diag(3), diag(3)); colnames(M) <- c("a", "b", "c", "a", "b", "x")
+  expect_identical(depprep:::.distinct_columns(M, colnames(M)), c(TRUE, TRUE, TRUE, FALSE, FALSE, TRUE))
+})
