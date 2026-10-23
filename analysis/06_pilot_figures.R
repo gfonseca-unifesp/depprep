@@ -8,6 +8,8 @@
 #   pilot_q3.png              contiguous classes: erased by the correction, kept by the broad band
 #   pilot_d7_temporal.png     temporal data: global basis vs groups vs others (review of D7)
 #   pilot_d8.png              replicates needed to detect each effect at stage 7 (D8)
+#   pilot_crossed.png         D14: recovery when the true blocks cross the regime groups
+#   pilot_between.png         D14: recovery with correlation 0.3 between groups
 
 suppressMessages({
   devtools::load_all(quiet = TRUE)
@@ -19,13 +21,15 @@ dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 save_fig <- function(p, name, w, h) ggsave(file.path(fig_dir, name), p, width = w, height = h, dpi = 150, bg = "white")
 theme_set(theme_minimal(base_size = 10))
 pal <- c(teal = "#0d6b72", brown = "#9a5806", grey = "#586972", green = "#2c7340", purple = "#7a4f9a")
-app_lev <- c("none", "independent", "default", "groups", "whiten", "broad", "sbss", "maf")
+app_lev <- c("none", "independent", "default", "groups", "variables", "whiten", "broad", "sbss", "maf")
 app_cols <- c(none = "grey60", independent = pal[["brown"]], default = pal[["teal"]], groups = pal[["green"]],
-              whiten = pal[["purple"]], broad = "#c9a227", sbss = "#b23a48", maf = "#5b7fb8")
+              variables = "#d07a2b", whiten = pal[["purple"]], broad = "#c9a227", sbss = "#b23a48", maf = "#5b7fb8")
 
 summ <- read.csv(file.path("results", "pilot_summary.csv"), stringsAsFactors = FALSE)
 summ$approach <- factor(summ$approach, app_lev)
-summ$fam <- sub(" (null|structured|contiguous)$", "", summ$label)
+summ$fam <- sub(" (null|structured|contiguous|crossed).*$", "", summ$label)
+summ_all <- summ
+summ <- summ[summ$between == 0 & summ$truth != "crossed", ]       # the original pilot truths
 summ$fam <- factor(summ$fam, unique(summ$fam[order(summ$scenario)]))
 
 # --- 1. Didactic example: k-means on a null spatial data set ---------------------------------
@@ -77,8 +81,10 @@ p <- ggplot(rec, aes(approach, median, colour = approach)) + geom_pointrange(aes
 save_fig(p, "pilot_recovery.png", 12, 8)
 
 # --- 4. Q3: contiguous classes -----------------------------------------------------------------
-q3 <- summ[summ$truth == "contiguous" & ((summ$method == "kmeans" & summ$metric == "ari_true_k") | (summ$method == "som" & summ$metric == "ari")), ]
-q3$panel <- ifelse(q3$method == "kmeans", "k-means", "SOM")
+q3 <- summ[summ$truth == "contiguous" & ((summ$method %in% c("kmeans", "constrained") & summ$metric == "ari_true_k") |
+                                           (summ$method == "som" & summ$metric == "ari")), ]
+q3$panel <- factor(c(kmeans = "k-means", som = "SOM", constrained = "constrained clustering (D14)")[q3$method],
+                   c("k-means", "SOM", "constrained clustering (D14)"))
 p <- ggplot(q3, aes(approach, median, colour = approach)) + geom_pointrange(aes(ymin = q05, ymax = q95), size = 0.3) +
   facet_grid(panel ~ fam) + scale_colour_manual(values = app_cols, guide = "none") +
   labs(title = "Q3: classes contiguous in space or time (ARI with the true classes)",
@@ -102,8 +108,9 @@ ct <- read.csv(file.path("results", "pilot_contrasts.csv"), stringsAsFactors = F
 key <- rbind(data.frame(method = names(h1_metrics), metric = h1_metrics, truth = "null"),
              data.frame(method = names(rec_metrics), metric = rec_metrics, truth = "structured"))
 ct <- merge(ct, key)
+ct <- ct[!grepl("between|crossed", ct$label), ]
 ct <- ct[ct$approach %in% c("independent", "default", "groups") & is.finite(ct$replicates_needed), ]
-ct$fam <- sub(" (null|structured|contiguous)$", "", ct$label)
+ct$fam <- sub(" (null|structured|contiguous|crossed).*$", "", ct$label)
 ct$what <- paste0(ct$method, ": ", ct$metric)
 p <- ggplot(ct, aes(pmin(replicates_needed, 1000), what, colour = approach)) + geom_point(size = 2, alpha = 0.8) +
   geom_vline(xintercept = c(20, 100, 200), linetype = "dashed", colour = "grey60") + facet_wrap(~ fam, nrow = 1) +
@@ -112,4 +119,20 @@ p <- ggplot(ct, aes(pmin(replicates_needed, 1000), what, colour = approach)) + g
        subtitle = "Capped at 1000. Dashed lines: 20, 100 and 200 replicates", x = "replicates (log scale)", y = NULL) +
   theme(legend.position = "bottom", axis.text.y = element_text(size = 7))
 save_fig(p, "pilot_d8.png", 13, 5.5)
+# --- 7. D14: blocks that cross the groups, and correlation between groups ---------------------
+d14_fig <- function(truth, between, file, title) {
+  d <- summ_all[summ_all$truth == truth & summ_all$between == between &
+                  paste(summ_all$method, summ_all$metric) %in% paste(names(rec_metrics), rec_metrics), ]
+  d$fam <- factor(d$fam, levels(summ$fam))
+  d$approach <- factor(d$approach, app_lev)
+  d$panel <- factor(rec_lab[d$method], rec_lab)
+  p <- ggplot(d, aes(approach, median, colour = approach)) + geom_pointrange(aes(ymin = q05, ymax = q95), size = 0.3) +
+    facet_grid(panel ~ fam, scales = "free_y", labeller = label_wrap_gen(22)) + scale_colour_manual(values = app_cols, guide = "none") +
+    labs(title = title, subtitle = "Median and 5-95% interval of 20 replicates", x = NULL, y = NULL) +
+    theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 7), strip.text.y = element_text(size = 7))
+  save_fig(p, file, 12, 8)
+}
+d14_fig("crossed", 0, "pilot_crossed.png",
+        "D14: true correlation blocks that cross the regime groups (the apparent association no longer has the shape of the true one)")
+d14_fig("structured", 0.3, "pilot_between.png", "D14: true correlation 0.5 within groups and 0.3 between groups")
 message("Figures written to ", fig_dir)

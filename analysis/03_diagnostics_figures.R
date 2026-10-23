@@ -120,10 +120,10 @@ p <- ggplot(conf, aes(classified, true, fill = pct)) + geom_tile(colour = "white
 save_fig(p, "diag_confusion.png", 11, 7.5)
 
 # --- 5. Scale uncertainty -------------------------------------------------------------------
-sp <- all[!is.na(all$true_range) & all$family != "temporal", ]
+sp <- all[!is.na(all$true_range) & all$family != "temporal" & all$scenario <= 10, ]   # the D4 grid (D14 scenarios apart)
 sp$ratio <- pmin(pmax(sp$range / sp$true_range, 0), 4)
 sp$size <- ifelse(sp$family == "spatial", paste0("S n=", sub("S n=([0-9]+).*", "\\1", sp$label)), as.character(sp$label))
-tm <- all[!is.na(all$true_phi) & all$family == "temporal", ]
+tm <- all[!is.na(all$true_phi) & all$family == "temporal" & all$scenario <= 10, ]
 tm$diff <- tm$phi - tm$share * tm$true_phi
 tm$size <- sub(" (high|low)$", "", tm$label)
 p1 <- ggplot(sp, aes(factor(true_range), ratio, fill = size)) +
