@@ -6,7 +6,7 @@
 \usage{
 run_downstream(
   X,
-  method = c("pca", "mds", "kmeans", "som", "constrained"),
+  method = c("pca", "mds", "kmeans", "som", "hdbscan", "constrained"),
   truth = list(),
   R = NULL,
   distance = c("euclidean", "gower"),
@@ -19,7 +19,7 @@ run_downstream(
 \arguments{
 \item{X}{Numeric matrix (observations x variables).}
 
-\item{method}{\code{"pca"}, \code{"mds"}, \code{"kmeans"}, \code{"som"} or \code{"constrained"}.}
+\item{method}{\code{"pca"}, \code{"mds"}, \code{"kmeans"}, \code{"som"}, \code{"hdbscan"} or \code{"constrained"}.}
 
 \item{truth}{List with any of: \code{R_true} (p x p), \code{classes} (one label per row of
 \code{X}), \code{signal} (matrix, the true signal of each observation, for MDS) and
@@ -71,6 +71,17 @@ number of classes;
 \item \code{"som"} (5 x 5 hexagonal map; units clustered into the true number of classes, or
 3): ARI, quantisation error, topographic error and the canonical correlation
 between the position on the map and the position in space or time;
+\item \code{"hdbscan"} (density-based clustering, \code{dbscan::hdbscan()}; decision D18): no
+distance threshold to tune, which would be unfair across corrections that change the
+scale of the distances. The minimum cluster size is \verb{max(10, ceiling(0.02 n))}
+observations (a count, not a distance): micro-clusters below 2\% of the data are not
+groups, while the simulated classes hold about a third each. Returns the number of
+clusters without the noise points (\code{n_clusters}), whether there is more than one
+(\code{clusters_above_1}, the spurious pattern of the null scenario, as \code{k > 1} by the gap
+statistic for k-means), the share of noise points (\code{noise_share}) and the ARI with
+the true classes, the noise points counted as a group of their own (\code{ari}); also the
+ARI on the clustered points only (\code{ari_clustered}, descriptive): HDBSCAN leaves many
+points as noise even around clean classes, so \code{ari} mixes purity and coverage.
 \item \code{"constrained"} (contiguity-constrained Ward clustering, \code{adespatial::constr.hclust};
 Legendre & Legendre 2012, sections 12.6 and 13.3): only observations linked in
 space or time may merge. The links come from \code{truth$position} (see below); the tree

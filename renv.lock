@@ -1499,6 +1499,52 @@
       "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
       "Repository": "CRAN"
     },
+    "dbscan": {
+      "Package": "dbscan",
+      "Version": "1.2.7",
+      "Source": "Repository",
+      "Title": "Density-Based Spatial Clustering of Applications with Noise (DBSCAN) and Related Algorithms",
+      "Date": "2026-10-04",
+      "Authors@R": "c( person(\"Michael\", \"Hahsler\", email = \"mhahsler@lyle.smu.edu\",  role = c(\"aut\", \"cre\", \"cph\"), comment = c(ORCID = \"0000-0003-2716-1405\")), person(\"Matthew\", \"Piekenbrock\", role = c(\"aut\", \"cph\")), person(\"Sunil\", \"Arya\", role = c(\"ctb\", \"cph\")), person(\"David\", \"Mount\", role = c(\"ctb\", \"cph\")), person(\"Claudia\", \"Malzer\", role = \"ctb\") )",
+      "Description": "A fast reimplementation of several density-based algorithms of the DBSCAN family. Includes the clustering algorithms DBSCAN (density-based spatial clustering of applications with noise) and HDBSCAN (hierarchical DBSCAN), the ordering algorithm OPTICS (ordering points to identify the clustering structure), shared nearest neighbor clustering, and the outlier detection algorithms LOF (local outlier factor) and GLOSH (global-local outlier score from hierarchies). The implementations use the kd-tree data structure (from library ANN) for faster k-nearest neighbor search. An R interface to fast kNN and fixed-radius NN search is also provided.  Hahsler, Piekenbrock and Doran (2019) <doi:10.18637/jss.v091.i01>.",
+      "License": "GPL (>= 3)",
+      "URL": "https://github.com/mhahsler/dbscan, http://michael.hahsler.net/dbscan/",
+      "BugReports": "https://github.com/mhahsler/dbscan/issues",
+      "Depends": [
+        "R (>= 4.3.0)"
+      ],
+      "Imports": [
+        "generics",
+        "graphics",
+        "Rcpp (>= 1.0.11)",
+        "stats"
+      ],
+      "Suggests": [
+        "dendextend",
+        "fpc",
+        "igraph",
+        "knitr",
+        "microbenchmark",
+        "reticulate (>= 1.41)",
+        "rmarkdown",
+        "testthat (>= 3.0.0)",
+        "tibble",
+        "tidyverse"
+      ],
+      "LinkingTo": [
+        "Rcpp"
+      ],
+      "VignetteBuilder": "knitr",
+      "Config/testthat/edition": "3",
+      "Copyright": "ANN library is copyright by University of Maryland, Sunil Arya and David Mount. All other code is copyright by Michael Hahsler and Matthew Piekenbrock.",
+      "Encoding": "UTF-8",
+      "Config/roxygen2/version": "8.1.0",
+      "Collate": "'AAA_dbscan-package.R' 'AAA_definitions.R' 'DBCV_datasets.R' 'DS3.R' 'GLOSH.R' 'LOF.R' 'NN.R' 'RcppExports.R' 'broom-dbscan-tidiers.R' 'comps.R' 'dbcv.R' 'dbscan.R' 'dendrogram.R' 'extractFOSC.R' 'frNN.R' 'hdbscan.R' 'hullplot.R' 'jpclust.R' 'kNN.R' 'kNNdist.R' 'moons.R' 'ncluster.R' 'nobs.R' 'optics.R' 'optics_extractXi.R' 'pointdensity.R' 'predict.R' 'reachability.R' 'sNN.R' 'sNNclust.R' 'utils.R' 'zzz.R'",
+      "NeedsCompilation": "yes",
+      "Author": "Michael Hahsler [aut, cre, cph] (ORCID: <https://orcid.org/0000-0003-2716-1405>), Matthew Piekenbrock [aut, cph], Sunil Arya [ctb, cph], David Mount [ctb, cph], Claudia Malzer [ctb]",
+      "Maintainer": "Michael Hahsler <mhahsler@lyle.smu.edu>",
+      "Repository": "CRAN"
+    },
     "deldir": {
       "Package": "deldir",
       "Version": "2.0-4",

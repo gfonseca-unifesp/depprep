@@ -101,3 +101,23 @@ test_that("PCA is scored against the true signal and large data sets are subsamp
   expect_identical(run_downstream(X, "kmeans", truth = list(classes = cls), max_n = 100, seed = 2), km)
   expect_false("subsample" %in% run_downstream(X, "kmeans", truth = list(classes = cls), seed = 2)$metric)
 })
+
+
+test_that("HDBSCAN finds well separated classes and no groups in noise", {
+  set.seed(8)
+  cls <- rep(1:3, each = 80)
+  X <- matrix(stats::rnorm(240 * 4), 240) + 4 * cbind(cls == 1, cls == 2, cls == 3, 0)
+  h <- run_downstream(X, "hdbscan", truth = list(classes = cls))
+  v <- stats::setNames(h$value, h$metric)
+  expect_equal(unname(v["n_clusters"]), 3)
+  expect_gt(v["ari_clustered"], 0.95)                      # the clusters are pure
+  expect_true(v["noise_share"] > 0 && v["noise_share"] < 0.5)
+  expect_gt(v["ari"], 0.3)                                 # noise counted as a group lowers the ARI
+  expect_equal(unname(v["min_points"]), 10)
+  W <- matrix(stats::rnorm(400 * 5), 400)
+  h0 <- run_downstream(W, "hdbscan", seed = 1)
+  v0 <- stats::setNames(h0$value, h0$metric)
+  expect_equal(unname(v0["clusters_above_1"]), 0)
+  expect_true(is.na(v0["ari"]))
+  expect_identical(run_downstream(W, "hdbscan", seed = 1), h0)
+})

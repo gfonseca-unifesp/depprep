@@ -21,6 +21,17 @@
 #' * `"som"` (5 x 5 hexagonal map; units clustered into the true number of classes, or
 #'   3): ARI, quantisation error, topographic error and the canonical correlation
 #'   between the position on the map and the position in space or time;
+#' * `"hdbscan"` (density-based clustering, `dbscan::hdbscan()`; decision D18): no
+#'   distance threshold to tune, which would be unfair across corrections that change the
+#'   scale of the distances. The minimum cluster size is `max(10, ceiling(0.02 n))`
+#'   observations (a count, not a distance): micro-clusters below 2% of the data are not
+#'   groups, while the simulated classes hold about a third each. Returns the number of
+#'   clusters without the noise points (`n_clusters`), whether there is more than one
+#'   (`clusters_above_1`, the spurious pattern of the null scenario, as `k > 1` by the gap
+#'   statistic for k-means), the share of noise points (`noise_share`) and the ARI with
+#'   the true classes, the noise points counted as a group of their own (`ari`); also the
+#'   ARI on the clustered points only (`ari_clustered`, descriptive): HDBSCAN leaves many
+#'   points as noise even around clean classes, so `ari` mixes purity and coverage.
 #' * `"constrained"` (contiguity-constrained Ward clustering, `adespatial::constr.hclust`;
 #'   Legendre & Legendre 2012, sections 12.6 and 13.3): only observations linked in
 #'   space or time may merge. The links come from `truth$position` (see below); the tree
@@ -31,7 +42,7 @@
 #'   regions or periods, which any decorrelation removes.
 #'
 #' @param X Numeric matrix (observations x variables).
-#' @param method `"pca"`, `"mds"`, `"kmeans"`, `"som"` or `"constrained"`.
+#' @param method `"pca"`, `"mds"`, `"kmeans"`, `"som"`, `"hdbscan"` or `"constrained"`.
 #' @param truth List with any of: `R_true` (p x p), `classes` (one label per row of
 #'   `X`), `signal` (matrix, the true signal of each observation, for MDS) and
 #'   `position` (coordinates or times of the rows, for the spurious-pattern metrics and
@@ -57,7 +68,7 @@
 #' X <- rbind(matrix(rnorm(150, 0), 50), matrix(rnorm(150, 3), 50))
 #' run_downstream(X, "kmeans", truth = list(classes = rep(1:2, each = 50)))
 #' @export
-run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som", "constrained"), truth = list(), R = NULL,
+run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som", "hdbscan", "constrained"), truth = list(), R = NULL,
                            distance = c("euclidean", "gower"), k_max = 6, B_gap = 20, seed = 1L, max_n = 3000) {
   method <- match.arg(method)
   distance <- match.arg(distance)
@@ -123,6 +134,16 @@ run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som", "constra
         mclust::adjustedRandIndex(km(Z, k)$cluster, truth$classes)
       return(out(k_gap = k_gap, k_gap_above_1 = as.numeric(k_gap > 1),
                  ari_gap = if (is.na(k_true)) NA_real_ else ari(k_gap), ari_true_k = if (is.na(k_true)) NA_real_ else ari(k_true)))
+    }
+    if (method == "hdbscan") {
+      min_pts <- max(10L, as.integer(ceiling(0.02 * nrow(Z))))
+      cl <- dbscan::hdbscan(Z, minPts = min_pts)$cluster        # 0 = noise
+      n_cl <- length(setdiff(unique(cl), 0))
+      return(out(n_clusters = n_cl, clusters_above_1 = as.numeric(n_cl > 1), noise_share = mean(cl == 0),
+                 ari = if (is.na(k_true)) NA_real_ else mclust::adjustedRandIndex(cl, truth$classes),
+                 ari_clustered = if (is.na(k_true) || sum(cl > 0) < 2) NA_real_ else
+                   mclust::adjustedRandIndex(cl[cl > 0], truth$classes[cl > 0]),
+                 min_points = min_pts))
     }
     if (method == "constrained") {
       if (is.null(truth$position)) stop("`truth$position` is required for the constrained clustering.")
