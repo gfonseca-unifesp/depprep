@@ -24,6 +24,11 @@
 #'   field, and the sum is rescaled to unit variance.
 #' * `"none"`: no large-scale component.
 #'
+#' Perturbations of the simulation grid (protocol §4): `nonstationary = c(a, b)` among
+#' the parameters of an `"exponential"` or `"matern"` group makes its range grow along x
+#' from `a` to `b` times `range` (a mixture of two stationary fields; `range` stays the
+#' nominal truth); `counts` turns a share of the variables into counts (see below).
+#'
 #' @param n Number of sites (ignored when `coords` is given).
 #' @param groups Groups created with [sim_groups()].
 #' @param R_true Correlation of the residual components (p x p); identity if `NULL`.
@@ -32,10 +37,15 @@
 #' @param classes Optional list describing observation classes: `k` (number of
 #'   classes), `type` (`"random"` or `"contiguous"`), `effect` (standard deviation of
 #'   the class means) and `vars` (indices of the variables that carry the classes).
+#' @param counts Share of the variables observed as counts (0, the default, for none):
+#'   every k-th variable, k = round(1 / counts), becomes Poisson with log-mean
+#'   log(5) - 0.125 + 0.5 z, z the standardised latent variable (mean count about 5).
+#'   The components, `R_true` and the classes stay on the latent scale, kept in
+#'   `X_latent`; `count_vars` names the count variables.
 #' @param seed Integer seed; recorded in the output.
 #' @return An object of class `depprep_sim` with `X`, `coords`, `group`,
-#'   `components` (`large`, `residual`, `class`), `R_true`, `classes`, `groups` and
-#'   `seed`.
+#'   `components` (`large`, `residual`, `class`), `R_true`, `classes`, `groups`,
+#'   `count_vars`, `X_latent` and `seed`.
 #' @examples
 #' g <- sim_groups(sim_group("long", 3, "exponential", range = 0.5),
 #'                 sim_group("short", 3, "exponential", range = 0.1),
@@ -43,7 +53,7 @@
 #' s <- sim_spatial(100, g, seed = 1)
 #' s
 #' @export
-sim_spatial <- function(n, groups, R_true = NULL, coords = NULL, classes = NULL, seed) {
+sim_spatial <- function(n, groups, R_true = NULL, coords = NULL, classes = NULL, seed, counts = 0) {
   stopifnot(inherits(groups, "depprep_groups"), !missing(seed))
   .check_regime(groups, c("exponential", "matern", "gradient", "none"))
   R_true <- .check_R(R_true, groups)
@@ -67,11 +77,12 @@ sim_spatial <- function(n, groups, R_true = NULL, coords = NULL, classes = NULL,
         next
       }
       if (is.null(p$range)) stop("Group '", g$name, "' needs `range`.", call. = FALSE)
-      out[[g$name]] <- as.vector(.grf_chol(coords, p$range, p$anisotropy, p$angle, smoothness = p$smoothness))
+      out[[g$name]] <- if (is.null(p$nonstationary)) as.vector(.grf_chol(coords, p$range, p$anisotropy, p$angle, smoothness = p$smoothness)) else
+        .grf_nonstationary(coords, p$range, p$nonstationary, p$anisotropy, p$angle, smoothness = p$smoothness)
     }
     out
   })
   large <- .large_by_variable(groups, fields, n)
   cls <- .make_classes(classes, n, ncol(large), seed, coords = coords)
-  .assemble("spatial", groups, large, R_true, cls, seed, list(coords = coords), match.call())
+  .assemble("spatial", groups, large, R_true, cls, seed, list(coords = coords), match.call(), counts = counts)
 }

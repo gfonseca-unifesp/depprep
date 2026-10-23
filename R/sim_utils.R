@@ -9,7 +9,7 @@
 # Independent random streams, one per component, so that changing one component
 # (for example the residuals) leaves the others unchanged.
 .streams <- c(coords = 1L, large = 2L, residual = 3L, classes = 4L, bootstrap = 5L, permutation = 6L,
-              basis = 7L, subsample = 8L, downstream = 9L)
+              basis = 7L, subsample = 8L, downstream = 9L, counts = 10L)
 
 # Evaluate `expr` with an L'Ecuyer-CMRG stream derived from `seed` and restore the
 # caller's random number generator afterwards.
@@ -328,13 +328,19 @@ make_R_true <- function(groups, type = c("identity", "blocks", "crossed"), withi
 }
 
 # Assemble X and the simulation object.
-.assemble <- function(family, groups, large, R_true, classes, seed, extra, call) {
+.assemble <- function(family, groups, large, R_true, classes, seed, extra, call, counts = 0) {
   share <- rep(vapply(groups, `[[`, 0, "large_scale_share"), vapply(groups, `[[`, 0L, "n_vars"))
   n_obs <- nrow(large)
   residual <- .with_stream(seed, .streams[["residual"]], .residual_mvn(n_obs, R_true))
   x <- sweep(large, 2, sqrt(share), "*") + sweep(residual, 2, sqrt(1 - share), "*") + classes$effect
   vn <- attr(groups, "var_names")
   colnames(x) <- colnames(large) <- colnames(residual) <- colnames(classes$effect) <- vn
+  count_vars <- .count_vars(ncol(x), counts)
+  latent <- NULL
+  if (length(count_vars)) {                               # perturbation: some variables observed as counts
+    latent <- x
+    x[, count_vars] <- .with_stream(seed, .streams[["counts"]], .to_counts(x[, count_vars, drop = FALSE]))
+  }
   structure(c(list(
     family = family,
     X = x,
@@ -345,6 +351,8 @@ make_R_true <- function(groups, type = c("identity", "blocks", "crossed"), withi
     classes = classes$labels,
     class_spec = classes$spec,
     groups = groups,
+    count_vars = vn[count_vars],
+    X_latent = latent,
     seed = seed,
     call = call), extra), class = "depprep_sim")
 }
@@ -360,4 +368,35 @@ print.depprep_sim <- function(x, ...) {
                 g$name, g$n_vars, reg, par, g$large_scale_share))
   }
   invisible(x)
+}
+
+# Perturbation "counts" (protocol §4): the share `counts` of the variables, every k-th
+# one (k = round(1 / counts), starting at the k-th), is observed as counts. Each chosen
+# variable z (standardised) becomes Poisson with log-mean a + b z, b = 0.5 and
+# a = log(5) - b^2 / 2, so the mean count is about 5 whatever the variable. The latent
+# variables, the residual correlation R_true and the classes stay on the latent scale.
+.count_vars <- function(p, counts) {
+  if (is.null(counts) || counts <= 0) return(integer(0))
+  if (counts > 1) stop("`counts` is a share of the variables, between 0 and 1.", call. = FALSE)
+  k <- max(1, round(1 / counts))
+  seq(k, p, by = k)
+}
+.to_counts <- function(Z, b = 0.5, mean_count = 5) {
+  Z <- scale(as.matrix(Z))
+  a <- log(mean_count) - b^2 / 2
+  matrix(stats::rpois(length(Z), exp(a + b * Z)), nrow(Z), dimnames = dimnames(Z))
+}
+
+# Perturbation "non-stationary range" (protocol §4): a field whose practical range grows
+# along x, from `ratio[1]` to `ratio[2]` times the nominal one. Two independent stationary
+# fields with those ranges are mixed with weights sqrt(w) and sqrt(1 - w), w falling
+# linearly from 1 at the smallest x to 0 at the largest: the variance stays 1 at every
+# site and the local range moves smoothly from the short to the long one. The nominal
+# range is the one recorded as truth (the middle of the domain is about halfway).
+.grf_nonstationary <- function(coords, range, ratio = c(0.5, 1.5), anisotropy = 1, angle = 0, smoothness = 0.5) {
+  f1 <- as.vector(.grf_chol(coords, range * ratio[1], anisotropy, angle, smoothness = smoothness))
+  f2 <- as.vector(.grf_chol(coords, range * ratio[2], anisotropy, angle, smoothness = smoothness))
+  x <- coords[, 1]
+  w <- (max(x) - x) / (max(x) - min(x))
+  sqrt(w) * f1 + sqrt(1 - w) * f2
 }

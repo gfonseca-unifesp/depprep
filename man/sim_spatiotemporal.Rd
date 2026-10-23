@@ -11,7 +11,8 @@ sim_spatiotemporal(
   R_true = NULL,
   coords = NULL,
   classes = NULL,
-  seed
+  seed,
+  counts = 0
 )
 }
 \arguments{
@@ -30,6 +31,12 @@ See \code{\link[=make_R_true]{make_R_true()}}.}
 spatial regions that keep their class at every time.}
 
 \item{seed}{Integer seed; recorded in the output.}
+
+\item{counts}{Share of the variables observed as counts (0, the default, for none):
+every k-th variable, k = round(1 / counts), becomes Poisson with log-mean
+log(5) - 0.125 + 0.5 z, z the standardised latent variable (mean count about 5).
+The components, \code{R_true} and the classes stay on the latent scale, kept in
+\code{X_latent}; \code{count_vars} names the count variables.}
 }
 \value{
 An object of class \code{depprep_sim} with \code{X}, \code{coords}, \code{time}, \code{index},

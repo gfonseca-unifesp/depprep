@@ -28,7 +28,7 @@
 #'                 sim_group("none", 2, "none"))
 #' sim_temporal(120, g, seed = 1)
 #' @export
-sim_temporal <- function(n_times, groups, R_true = NULL, classes = NULL, seed) {
+sim_temporal <- function(n_times, groups, R_true = NULL, classes = NULL, seed, counts = 0) {
   stopifnot(inherits(groups, "depprep_groups"), !missing(seed), n_times >= 2)
   .check_regime(groups, c("ar1", "seasonal", "trend_shift", "seasonal_trend", "none"))
   R_true <- .check_R(R_true, groups)
@@ -62,5 +62,5 @@ sim_temporal <- function(n_times, groups, R_true = NULL, classes = NULL, seed) {
   })
   large <- .large_by_variable(groups, fields, n_times)
   cls <- .make_classes(classes, n_times, ncol(large), seed, n_times = n_times)
-  .assemble("temporal", groups, large, R_true, cls, seed, list(time = seq_len(n_times)), match.call())
+  .assemble("temporal", groups, large, R_true, cls, seed, list(time = seq_len(n_times)), match.call(), counts = counts)
 }

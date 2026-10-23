@@ -4,7 +4,15 @@
 \alias{sim_spatial}
 \title{Simulate a spatial data set with known truth}
 \usage{
-sim_spatial(n, groups, R_true = NULL, coords = NULL, classes = NULL, seed)
+sim_spatial(
+  n,
+  groups,
+  R_true = NULL,
+  coords = NULL,
+  classes = NULL,
+  seed,
+  counts = 0
+)
 }
 \arguments{
 \item{n}{Number of sites (ignored when \code{coords} is given).}
@@ -21,11 +29,17 @@ classes), \code{type} (\code{"random"} or \code{"contiguous"}), \code{effect} (s
 the class means) and \code{vars} (indices of the variables that carry the classes).}
 
 \item{seed}{Integer seed; recorded in the output.}
+
+\item{counts}{Share of the variables observed as counts (0, the default, for none):
+every k-th variable, k = round(1 / counts), becomes Poisson with log-mean
+log(5) - 0.125 + 0.5 z, z the standardised latent variable (mean count about 5).
+The components, \code{R_true} and the classes stay on the latent scale, kept in
+\code{X_latent}; \code{count_vars} names the count variables.}
 }
 \value{
 An object of class \code{depprep_sim} with \code{X}, \code{coords}, \code{group},
-\code{components} (\code{large}, \code{residual}, \code{class}), \code{R_true}, \code{classes}, \code{groups} and
-\code{seed}.
+\code{components} (\code{large}, \code{residual}, \code{class}), \code{R_true}, \code{classes}, \code{groups},
+\code{count_vars}, \code{X_latent} and \code{seed}.
 }
 \description{
 Generates \code{n} sites in the unit square (or uses \code{coords}) and one time. Each
@@ -54,6 +68,11 @@ the x axis, default 0), \code{shape} (\code{"linear"}, default, a plane rising a
 field, and the sum is rescaled to unit variance.
 \item \code{"none"}: no large-scale component.
 }
+
+Perturbations of the simulation grid (protocol §4): \code{nonstationary = c(a, b)} among
+the parameters of an \code{"exponential"} or \code{"matern"} group makes its range grow along x
+from \code{a} to \code{b} times \code{range} (a mixture of two stationary fields; \code{range} stays the
+nominal truth); \code{counts} turns a share of the variables into counts (see below).
 }
 \examples{
 g <- sim_groups(sim_group("long", 3, "exponential", range = 0.5),

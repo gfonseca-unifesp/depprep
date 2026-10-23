@@ -34,7 +34,7 @@
 #'                 sim_group("none", 2, "none"))
 #' sim_spatiotemporal(50, 60, g, seed = 1)
 #' @export
-sim_spatiotemporal <- function(n, n_times, groups, R_true = NULL, coords = NULL, classes = NULL, seed) {
+sim_spatiotemporal <- function(n, n_times, groups, R_true = NULL, coords = NULL, classes = NULL, seed, counts = 0) {
   stopifnot(inherits(groups, "depprep_groups"), !missing(seed), n_times >= 2)
   .check_regime(groups, c("separable_ar1", "separable_seasonal", "moving", "temporal_common", "none"))
   R_true <- .check_R(R_true, groups)
@@ -88,5 +88,5 @@ sim_spatiotemporal <- function(n, n_times, groups, R_true = NULL, coords = NULL,
   cls <- .make_classes(classes, n_obs, ncol(large), seed, coords = coords, expand = n_times)
   index <- data.frame(site = rep(seq_len(n), times = n_times), time = rep(seq_len(n_times), each = n))
   .assemble("spatiotemporal", groups, large, R_true, cls, seed,
-            list(coords = coords, time = seq_len(n_times), index = index), match.call())
+            list(coords = coords, time = seq_len(n_times), index = index), match.call(), counts = counts)
 }

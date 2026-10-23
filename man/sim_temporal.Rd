@@ -4,7 +4,7 @@
 \alias{sim_temporal}
 \title{Simulate a temporal data set with known truth}
 \usage{
-sim_temporal(n_times, groups, R_true = NULL, classes = NULL, seed)
+sim_temporal(n_times, groups, R_true = NULL, classes = NULL, seed, counts = 0)
 }
 \arguments{
 \item{n_times}{Number of time steps.}
@@ -18,6 +18,12 @@ See \code{\link[=make_R_true]{make_R_true()}}.}
 of consecutive times.}
 
 \item{seed}{Integer seed; recorded in the output.}
+
+\item{counts}{Share of the variables observed as counts (0, the default, for none):
+every k-th variable, k = round(1 / counts), becomes Poisson with log-mean
+log(5) - 0.125 + 0.5 z, z the standardised latent variable (mean count about 5).
+The components, \code{R_true} and the classes stay on the latent scale, kept in
+\code{X_latent}; \code{count_vars} names the count variables.}
 }
 \value{
 An object of class \code{depprep_sim} with \code{X}, \code{time}, \code{group}, \code{components},
