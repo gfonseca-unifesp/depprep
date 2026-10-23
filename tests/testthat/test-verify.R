@@ -77,7 +77,7 @@ test_that("the projected and residual parts rebuild the covariance", {
   grp <- stats::setNames(c(rep("g1", 3), rep("g2", 3), rep("none", 2)), colnames(s$X))
   bases <- list(g1 = build_group_basis(s$X[, 1:3], coords = s$coords, type = "isotropic", seed = 1),
                 g2 = build_group_basis(s$X[, 4:6], coords = s$coords, type = "isotropic", seed = 1))
-  cr <- correct(s, grp, bases = bases)
+  cr <- correct(s, grp, bases = bases, data_basis = "union")   # the identities hold for the union projector
   v <- verify(cr, s, nperm = 0)
   C <- stats::cov(s$X)
   expect_equal(v$cov_large + v$cov_residual, C, ignore_attr = TRUE)
@@ -120,4 +120,18 @@ test_that("the Q3 warning fires for contiguous classes and not for the null trut
   expect_match(v1$warnings, "signal at the scale of the basis", all = FALSE)
   expect_false(any(grepl("signal at the scale of the basis", v0$warnings)))
   expect_gt(v1$q3$statistic, v0$q3$statistic)
+})
+
+test_that("verify() tests each column of an own-basis data matrix against its own basis", {
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("none", 2, "none"))
+  s <- sim_spatial(200, g, seed = 6)
+  grp <- stats::setNames(c("g1", "g1", "g1", "none", "none"), colnames(s$X))
+  cr <- correct(s, grp, seed = 1)                          # default: data_basis = "own"
+  v <- verify(cr, s, nperm = 49)
+  expect_equal(nrow(v$variables), 5)
+  expect_true(all(is.finite(v$variables$correlogram_p)))
+  expect_lte(sum(v$variables$residual_structure), 1)       # each null removes the variable's own basis
+  ob <- depprep:::.own_bases(cr, nrow(s$X), colnames(s$X))
+  expect_equal(ncol(ob[[1]]), ncol(cr$variable_bases[[1]]))
+  expect_equal(ncol(ob[[4]]), 0)
 })

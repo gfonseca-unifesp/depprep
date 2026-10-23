@@ -7,9 +7,15 @@
 #'   basis, across groups with the union of the two bases — and projected to the
 #'   nearest valid correlation matrix (`adjustment` records how much it moved); for
 #'   PCA and other methods that take a correlation matrix;
-#' * `X`: a data matrix of residuals on the union of all group bases (`data_basis =
-#'   "union"`), or of each variable on its own basis (`data_basis = "own"`); for
-#'   k-means, SOM and MDS on observations.
+#' * `X`: a data matrix for k-means, SOM and MDS on observations. By default
+#'   (`data_basis = "own"`, decisions D13 and D17) each variable is corrected with a
+#'   basis selected on that variable alone, in every mode and family: in the stage 6
+#'   pilot this removed the spurious patterns almost as well as a shared basis and,
+#'   unlike it, kept the classes of the observations, because a large shared basis
+#'   removes part of every variable's class signal. The columns of `X` then carry the
+#'   small between-basis error of their correlations (of order rho k/n); `R` is the
+#'   estimate of the correlations. `data_basis = "union"` gives the residuals on the
+#'   union of all the bases instead (one basis for every variable).
 #'
 #' Modes:
 #' * `"conditional"` (residuals on the basis): `(I - P) x`;
@@ -38,10 +44,7 @@
 #' all of them for each regime type present) or `"variables"` (each dependent variable
 #' selects its own basis, and the union of these bases, capped at `kn_max`, is the
 #' shared basis of all of them; Peres-Neto and Legendre 2010). With `"variables"`, `R`
-#' uses the union for every pair, so the bases of two variables never differ; with
-#' `data_basis = "own"` the data matrix `X` instead holds the residuals of each
-#' variable on its own basis (the "independent" approach of the stage 6 pilot), which
-#' removes less of each variable but no longer has one basis for all. Variables
+#' uses the union for every pair, so the bases of two variables never differ. Variables
 #' without dependence are never corrected among themselves.
 #'
 #' Defaults (decision D7, calibrated on the stage 5 simulations, where all basis
@@ -65,10 +68,10 @@
 #' @param scope `"global"`, `"groups"` or `"variables"`; `NULL` for the default
 #'   (`"global"` for the conditional and scale modes in spatial and temporal data,
 #'   `"groups"` otherwise and whenever `bases` is given).
-#' @param data_basis Basis of each column of the data matrix `X` in the conditional
-#'   mode: `"union"` (default, the union of all bases, the same for every variable) or
-#'   `"own"` (the variable's own basis: its group's basis, or its own selection under
-#'   `scope = "variables"`).
+#' @param data_basis Basis of each column of the data matrix `X`: `"own"` (default; a
+#'   basis selected on each variable alone, its selection under `scope = "variables"`,
+#'   in any mode; when `bases` are given, the basis given for its group) or `"union"`
+#'   (the union of all bases, the same for every variable; conditional mode).
 #' @param period Seasonal period for the seasonal groups: one number, or a vector named
 #'   by group. When `NULL`, the periods recorded in `grouping` by [group_regimes()] are
 #'   used; a seasonal group without any period gets 12, with a warning.
@@ -97,7 +100,7 @@
 #' round(cr$R, 2)
 #' @export
 correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases = NULL,
-                    mode = NULL, scope = NULL, data_basis = c("union", "own"), period = NULL,
+                    mode = NULL, scope = NULL, data_basis = c("own", "union"), period = NULL,
                     kn_max = 0.3, seed = 1L) {
   if (inherits(X, "depprep_sim")) {
     d <- .data_parts(X); X <- d$X; coords <- d$coords; time <- d$time; index <- d$index
@@ -111,9 +114,19 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   if (is.null(scope)) scope <- if (is.null(bases) && mode != "whiten" && family != "spatiotemporal") "global" else "groups"
   scope <- match.arg(scope, c("groups", "global", "variables"))
   data_basis <- match.arg(data_basis)
-  if (data_basis == "own" && mode != "conditional") stop("`data_basis = \"own\"` needs the conditional mode.", call. = FALSE)
   grp <- .group_vector(grouping, colnames(X))
   gtype <- .group_types(grouping, grp)
+  # regime type of each variable, before any union: from the grouping table, else from
+  # the basis given for its group, else the group's type
+  vtype0 <- if (inherits(grouping, "data.frame") && "type" %in% names(grouping)) {
+    grouping$type[match(colnames(X), grouping$variable)]
+  } else vapply(grp, function(g) {
+    if (g == "none") return("none")
+    tb <- if (!is.null(bases) && !is.null(bases[[g]])) attr(bases[[g]], "type") else NULL
+    if (!is.null(tb)) tb else gtype[[g]]
+  }, "")
+  grp0 <- grp
+  bases_given <- !is.null(bases)
   args <- switch(family, spatial = list(coords = coords), temporal = list(time = time),
                  spatiotemporal = list(coords = coords, index = index))
   n <- nrow(X)
@@ -208,8 +221,16 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   diag(R) <- 1
   near <- as.matrix(Matrix::nearPD(R, corr = TRUE, keepDiag = TRUE)$mat)
   dimnames(near) <- dimnames(R)
-  Xout <- if (mode == "conditional" && data_basis == "own") {
-    own <- function(j) if (!is.null(variable_bases) && grp[j] != "none") variable_bases[[colnames(X)[j]]] else basis_of(grp[j])
+  Xout <- if (data_basis == "own") {
+    # each variable on a basis selected on that variable alone (decisions D13 and D17), in
+    # any mode: R keeps the mode's estimate, the data matrix keeps each variable's classes
+    if (is.null(variable_bases) && !bases_given) {
+      variable_bases <- stats::setNames(lapply(which(grp0 != "none"), function(j) do.call(build_group_basis, c(list(
+        X_group = X[, j, drop = FALSE], type = vtype0[j], period = .period_of(vtype0[j], grp0[j], period, grouping),
+        seed = seed + j), args))), colnames(X)[grp0 != "none"])
+    }
+    own <- function(j) if (grp0[j] == "none") empty else
+      if (!is.null(variable_bases)) variable_bases[[colnames(X)[j]]] else basis_of(grp[j])   # bases given: use them
     E <- vapply(seq_len(ncol(X)), function(j) .resid_on(X[, j, drop = FALSE], own(j))[, 1], numeric(n))
     E <- matrix(E, n); colnames(E) <- colnames(X); E
   } else if (mode == "conditional") {

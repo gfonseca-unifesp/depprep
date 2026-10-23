@@ -27,7 +27,7 @@ test_that("both outputs are valid: a correlation matrix and residuals orthogonal
   grp <- c(rep("g1", 3), rep("g2", 3), rep("none", 2)); names(grp) <- colnames(s$X)
   bases <- list(g1 = build_group_basis(s$X[, 1:3], coords = s$coords, type = "isotropic", seed = 1),
                 g2 = build_group_basis(s$X[, 4:6], coords = s$coords, type = "isotropic", seed = 1))
-  cr <- correct(s, grp, bases = bases)
+  cr <- correct(s, grp, bases = bases, data_basis = "union")
   expect_equal(cr$R, t(cr$R))
   expect_equal(unname(diag(cr$R)), rep(1, 8))
   expect_gt(min(eigen(cr$R, only.values = TRUE)$values), -1e-8)
@@ -35,7 +35,7 @@ test_that("both outputs are valid: a correlation matrix and residuals orthogonal
   U <- unclass(union_basis(bases$g1, bases$g2))
   expect_lt(max(abs(crossprod(U, cr$X))), 1e-8)
   expect_equal(nrow(cr$union_kn), 3)                      # g1-g2, g1-none, g2-none
-  expect_identical(correct(s, grp, bases = bases), cr)
+  expect_identical(correct(s, grp, bases = bases, data_basis = "union"), cr)
   expect_error(correct(s, c(x = "g1")), "every column")
 })
 
@@ -138,8 +138,8 @@ test_that("a temporal pattern at a known wavelength lands in the right band", {
 test_that("scope variables: the same basis for every variable gives the same R as one group", {
   d <- exact_case(0.5)
   grp <- c(a = "g1", b = "g1")
-  cv <- correct(d$X, grp, coords = d$xy, scope = "variables", bases = list(a = d$B, b = d$B))
-  cg <- correct(d$X, grp, coords = d$xy, bases = list(g1 = d$B))
+  cv <- correct(d$X, grp, coords = d$xy, scope = "variables", bases = list(a = d$B, b = d$B), data_basis = "union")
+  cg <- correct(d$X, grp, coords = d$xy, bases = list(g1 = d$B), data_basis = "union")
   expect_identical(cv$scope, "variables")
   expect_named(cv$bases, "union")
   expect_equal(attr(cv$bases$union, "k"), 10)
@@ -148,7 +148,10 @@ test_that("scope variables: the same basis for every variable gives the same R a
   expect_equal(correct(d$X, grp, coords = d$xy, scope = "variables", bases = list(a = d$B, b = d$B),
                        data_basis = "own")$X, cg$X, ignore_attr = TRUE)
   expect_error(correct(d$X, grp, coords = d$xy, scope = "variables", bases = list(a = d$B)), "one basis per dependent")
-  expect_error(correct(d$X, grp, coords = d$xy, bases = list(g1 = d$B), mode = "whiten", data_basis = "own"), "conditional")
+  # D17: in whitening mode the data matrix can still hold each variable on its own basis
+  cw <- correct(d$X, grp, coords = d$xy, bases = list(g1 = d$B), mode = "whiten", data_basis = "own")
+  expect_null(cw$variable_bases)                          # bases given: each variable uses its group's
+  expect_equal(cw$X, depprep:::.resid_on(d$X, d$B), ignore_attr = TRUE)
 })
 
 test_that("scope variables: the union contains each variable's basis and every pair uses it", {
@@ -156,7 +159,7 @@ test_that("scope variables: the union contains each variable's basis and every p
                   sim_group("none", 2, "none"))
   s <- sim_spatial(300, g, seed = 2)
   grp <- stats::setNames(c("g1", "g1", "g2", "g2", "none", "none"), colnames(s$X))
-  cv <- correct(s, grp, scope = "variables", seed = 3)
+  cv <- correct(s, grp, scope = "variables", seed = 3, data_basis = "union")
   expect_named(cv$variable_bases, colnames(s$X)[1:4])
   expect_true(all(cv$group[1:4] == "union") && all(cv$group[5:6] == "none"))
   U <- unclass(cv$bases$union)
@@ -234,4 +237,19 @@ test_that("the union of the variable bases works when it has more columns than s
   expect_equal(crossprod(unclass(u)), diag(ncol(u)), tolerance = 1e-8, ignore_attr = TRUE)
   M <- cbind(diag(3), diag(3)); colnames(M) <- c("a", "b", "c", "a", "b", "x")
   expect_identical(depprep:::.distinct_columns(M, colnames(M)), c(TRUE, TRUE, TRUE, FALSE, FALSE, TRUE))
+})
+
+
+test_that("by default the data matrix holds each variable on a basis selected on it alone (D17)", {
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("none", 2, "none"))
+  s <- sim_spatial(200, g, seed = 4)
+  grp <- stats::setNames(c("g1", "g1", "g1", "none", "none"), colnames(s$X))
+  cr <- correct(s, grp, seed = 2)
+  expect_identical(cr$data_basis, "own")
+  expect_named(cr$variable_bases, colnames(s$X)[1:3])
+  for (j in 1:3) {
+    b <- build_group_basis(s$X[, j, drop = FALSE], coords = s$coords, type = "isotropic", seed = 2 + j)
+    expect_equal(cr$X[, j], depprep:::.resid_on(s$X[, j, drop = FALSE], b)[, 1], ignore_attr = TRUE)
+  }
+  expect_equal(cr$X[, 4], s$X[, 4] - mean(s$X[, 4]), ignore_attr = TRUE)   # no dependence: centred only
 })

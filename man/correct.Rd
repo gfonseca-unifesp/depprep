@@ -13,7 +13,7 @@ correct(
   bases = NULL,
   mode = NULL,
   scope = NULL,
-  data_basis = c("union", "own"),
+  data_basis = c("own", "union"),
   period = NULL,
   kn_max = 0.3,
   seed = 1L
@@ -39,10 +39,10 @@ data family (see above).}
 (\code{"global"} for the conditional and scale modes in spatial and temporal data,
 \code{"groups"} otherwise and whenever \code{bases} is given).}
 
-\item{data_basis}{Basis of each column of the data matrix \code{X} in the conditional
-mode: \code{"union"} (default, the union of all bases, the same for every variable) or
-\code{"own"} (the variable's own basis: its group's basis, or its own selection under
-\code{scope = "variables"}).}
+\item{data_basis}{Basis of each column of the data matrix \code{X}: \code{"own"} (default; a
+basis selected on each variable alone, its selection under \code{scope = "variables"},
+in any mode; when \code{bases} are given, the basis given for its group) or \code{"union"}
+(the union of all bases, the same for every variable; conditional mode).}
 
 \item{period}{Seasonal period for the seasonal groups: one number, or a vector named
 by group. When \code{NULL}, the periods recorded in \code{grouping} by \code{\link[=group_regimes]{group_regimes()}} are
@@ -71,8 +71,15 @@ variables. Two outputs, as fixed by the project's decision P1:
 basis, across groups with the union of the two bases — and projected to the
 nearest valid correlation matrix (\code{adjustment} records how much it moved); for
 PCA and other methods that take a correlation matrix;
-\item \code{X}: a data matrix of residuals on the union of all group bases (\code{data_basis = "union"}), or of each variable on its own basis (\code{data_basis = "own"}); for
-k-means, SOM and MDS on observations.
+\item \code{X}: a data matrix for k-means, SOM and MDS on observations. By default
+(\code{data_basis = "own"}, decisions D13 and D17) each variable is corrected with a
+basis selected on that variable alone, in every mode and family: in the stage 6
+pilot this removed the spurious patterns almost as well as a shared basis and,
+unlike it, kept the classes of the observations, because a large shared basis
+removes part of every variable's class signal. The columns of \code{X} then carry the
+small between-basis error of their correlations (of order rho k/n); \code{R} is the
+estimate of the correlations. \code{data_basis = "union"} gives the residuals on the
+union of all the bases instead (one basis for every variable).
 }
 }
 \details{
@@ -105,10 +112,7 @@ Scope of the bases: \code{"groups"} (one basis per group, unions across groups),
 all of them for each regime type present) or \code{"variables"} (each dependent variable
 selects its own basis, and the union of these bases, capped at \code{kn_max}, is the
 shared basis of all of them; Peres-Neto and Legendre 2010). With \code{"variables"}, \code{R}
-uses the union for every pair, so the bases of two variables never differ; with
-\code{data_basis = "own"} the data matrix \code{X} instead holds the residuals of each
-variable on its own basis (the "independent" approach of the stage 6 pilot), which
-removes less of each variable but no longer has one basis for all. Variables
+uses the union for every pair, so the bases of two variables never differ. Variables
 without dependence are never corrected among themselves.
 
 Defaults (decision D7, calibrated on the stage 5 simulations, where all basis

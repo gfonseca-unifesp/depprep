@@ -96,7 +96,9 @@ Lane). In the whiten mode only the mean is removed, so these are the usual tests
 mode each variable splits into a projected (large-scale) part \verb{P x} and a residual
 part \verb{(I - P) x}, and so does the covariance of every pair, exactly:
 \verb{x'y = x'P y + x'(I - P) y}. On the union of all bases (the projector of the data
-matrix \code{corrected$X}) this gives \code{cov_large + cov_residual = cov(X)}, \code{R_large}
+matrix when \code{data_basis = "union"}; with the default \code{"own"} each column of
+\code{corrected$X} has its own basis, and these parts still describe the union) this gives
+\code{cov_large + cov_residual = cov(X)}, \code{R_large}
 (the correlation of the projected parts) and \code{large_share} (the share of each
 covariance, and on the diagonal of each variance, that lay in the projected part).
 \code{large_share_pairwise} gives the same share with the projector \code{correct()} uses for

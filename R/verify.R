@@ -37,7 +37,9 @@
 #' mode each variable splits into a projected (large-scale) part `P x` and a residual
 #' part `(I - P) x`, and so does the covariance of every pair, exactly:
 #' `x'y = x'P y + x'(I - P) y`. On the union of all bases (the projector of the data
-#' matrix `corrected$X`) this gives `cov_large + cov_residual = cov(X)`, `R_large`
+#' matrix when `data_basis = "union"`; with the default `"own"` each column of
+#' `corrected$X` has its own basis, and these parts still describe the union) this gives
+#' `cov_large + cov_residual = cov(X)`, `R_large`
 #' (the correlation of the projected parts) and `large_share` (the share of each
 #' covariance, and on the diagonal of each variance, that lay in the projected part).
 #' `large_share_pairwise` gives the same share with the projector `correct()` uses for
@@ -116,7 +118,10 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
   # the whitening return them in time order without the first times
   ord <- if (family == "temporal") order(time) else seq_len(nrow(X))
   Xo <- X[ord, , drop = FALSE]
-  if (corrected$mode == "conditional") E <- E[ord, , drop = FALSE]
+  # with data_basis = "own" (the default, D17) every column of the data matrix holds that
+  # variable's residual on its own basis, in the rows of X, in any mode
+  own <- identical(corrected$data_basis, "own")
+  if (corrected$mode == "conditional" || own) E <- E[ord, , drop = FALSE]
   keep <- utils::tail(seq_len(nrow(Xo)), nrow(E))
   autocor <- switch(family,
     spatial = { lw <- .knn_weights(coords); function(z, rows) .moran(z, lw)[["moran_I"]] },
@@ -145,20 +150,30 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
     apply(M, 2, function(z) tapply(z, index$site[keep], mean))
   }
   Z <- switch(family, spatiotemporal = site_means(E), E)
-  Fq <- .fixed_space(switch(family, temporal = U[ord, , drop = FALSE][keep, , drop = FALSE],
-                            spatiotemporal = site_means(U[keep, , drop = FALSE]), U))
+  fixed <- function(B) .fixed_space(switch(family, temporal = B[ord, , drop = FALSE][keep, , drop = FALSE],
+                                            spatiotemporal = site_means(B[keep, , drop = FALSE]), B))
+  Fq <- fixed(U)
+  # the null of each variable removes the basis that variable was corrected with
+  own_b <- if (own) .own_bases(corrected, nrow(X), colnames(X)) else NULL
+  Fq_of <- function(j) if (is.null(own_b)) Fq else fixed(own_b[[j]])
+  Fq_all <- if (is.null(own_b)) Fq else {
+    nz <- Filter(ncol, own_b)
+    fixed(if (length(nz)) unclass(suppressWarnings(do.call(union_basis, c(nz, kn_max = 1)))) else matrix(0, nrow(X), 0))
+  }
   correlograms <- NULL
   if (family == "temporal") {
     T_known <- .known_period(period, corrected)
     n_t <- nrow(E)
     lag <- min(ceiling(max(if (is.finite(T_known)) 2 * T_known else 0, 10 * log10(n_t))), floor(n_t / 3))
     vars$lb_lag <- lag
-    vars$lb_p <- .ljung_box(Z, lag, Fq, nperm, seed)
+    vars$lb_p <- if (is.null(own_b)) .ljung_box(Z, lag, Fq, nperm, seed) else
+      vapply(seq_len(ncol(Z)), function(j) .ljung_box(Z[, j, drop = FALSE], lag, Fq_of(j), nperm, seed + j), 0)
     vars$residual_structure <- vars$lb_p <= alpha
     position <- matrix(time[ord][keep])
   } else {
     position <- coords
-    correlograms <- .moran_correlogram(Z, position, Fq)
+    correlograms <- if (is.null(own_b)) .moran_correlogram(Z, position, Fq) else
+      do.call(rbind, lapply(seq_len(ncol(Z)), function(j) .moran_correlogram(Z[, j, drop = FALSE], position, Fq_of(j))))
     by_var <- split(correlograms, factor(correlograms$variable, levels = colnames(X)))
     vars$correlogram_p <- vapply(by_var, function(d) if (all(is.na(d$p))) NA_real_ else
       min(1, min(d$p, na.rm = TRUE) * sum(!is.na(d$p))), 0, USE.NAMES = FALSE)
@@ -168,7 +183,7 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
     }, 0L, USE.NAMES = FALSE)
     vars$residual_structure <- !is.na(vars$correlogram_p) & vars$correlogram_p <= alpha
   }
-  mantel <- .mantel_correlogram(Z, position, Fq, nperm, seed)
+  mantel <- .mantel_correlogram(Z, position, Fq_all, nperm, seed)
   mantel_p <- if (is.null(mantel)) NA_real_ else min(1, min(mantel$p, na.rm = TRUE) * sum(!is.na(mantel$p)))
 
   # what the correction did to the correlations
@@ -219,6 +234,19 @@ print.depprep_verification <- function(x, ...) {
   if (length(x$warnings)) cat("Warnings:", paste(x$warnings, collapse = "; "), "\n")
   if (length(x$notes)) cat("Notes:", paste(x$notes, collapse = "; "), "\n")
   invisible(x)
+}
+
+# Basis each column of the data matrix was corrected with when data_basis = "own": the
+# variable's own selection, or its group's basis when the bases were given; empty for the
+# variables without dependence.
+.own_bases <- function(corrected, n, vars) {
+  empty <- matrix(0, n, 0)
+  lapply(seq_along(vars), function(j) {
+    g <- corrected$group[[j]]
+    if (g == "none") return(empty)
+    b <- if (!is.null(corrected$variable_bases)) corrected$variable_bases[[vars[j]]] else corrected$bases[[g]]
+    if (is.null(b)) empty else unclass(b)
+  })
 }
 
 # Union of the bases of a correction (the projector of its data matrix).
