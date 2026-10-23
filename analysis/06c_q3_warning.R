@@ -36,8 +36,8 @@ one_q3 <- function(sc, r) {
   seed <- base_seed + 1000L * sc$id + r
   s <- simulate(sc, seed, sc$truth)
   gr <- group_regimes(diagnose_variables(s))
-  fits <- list(default = if (s$family == "spatiotemporal") NULL else correct(s, gr, seed = seed),
-               groups = correct(s, gr, mode = "conditional", scope = "groups", seed = seed))
+  fits <- list(default = if (s$family == "spatiotemporal") NULL else correct(s, gr, seed = seed, data_basis = "union"),
+               groups = correct(s, gr, mode = "conditional", scope = "groups", seed = seed, data_basis = "union"))
   if (is.null(fits$default)) fits$default <- fits$groups
   do.call(rbind, lapply(names(fits), function(a) {
     v <- verify(fits[[a]], s, nperm = 0)

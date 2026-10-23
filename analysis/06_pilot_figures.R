@@ -37,7 +37,7 @@ sc <- pilot_scenarios[pilot_scenarios$label == "S n=400 high null", ]
 seed <- 6600L + 1000L * sc$id + 1L
 s <- simulate(sc, seed, "null")
 gr <- group_regimes(diagnose_variables(s))
-cr <- correct(s, gr, seed = seed)
+cr <- correct(s, gr, seed = seed, data_basis = "union")   # as in the pilot, before D17
 km <- function(Z) { set.seed(1); stats::kmeans(scale(Z), 3, nstart = 20)$cluster }
 nb <- spdep::knn2nb(spdep::knearneigh(s$coords, 8))
 same_nb <- function(cl) mean(unlist(lapply(seq_along(nb), function(i) cl[nb[[i]]] == cl[i])))

@@ -61,11 +61,11 @@ one_pilot <- function(sc, r) {
         period = if (is.finite(sig$period[j])) round(sig$period[j]) else 12, seed = seed + j), args))), numeric(n))
     list(X = E, R = stats::cor(E))
   })
-  approaches$default <- timed(correct(s, gr, seed = seed)[c("X", "R")])
-  approaches$groups <- timed(correct(s, gr, mode = "conditional", scope = "groups", seed = seed)[c("X", "R")])
+  approaches$default <- timed(correct(s, gr, seed = seed, data_basis = "union")[c("X", "R")])   # the pilot ran before D17
+  approaches$groups <- timed(correct(s, gr, mode = "conditional", scope = "groups", seed = seed, data_basis = "union")[c("X", "R")])
   # D14: each variable selects its basis, the union is shared (Peres-Neto & Legendre 2010)
-  approaches$variables <- timed(correct(s, gr, mode = "conditional", scope = "variables", seed = seed)[c("X", "R")])
-  if (s$family != "spatiotemporal") approaches$whiten <- timed(correct(s, gr, mode = "whiten", seed = seed)[c("X", "R")])
+  approaches$variables <- timed(correct(s, gr, mode = "conditional", scope = "variables", seed = seed, data_basis = "union")[c("X", "R")])
+  if (s$family != "spatiotemporal") approaches$whiten <- timed(correct(s, gr, mode = "whiten", seed = seed, data_basis = "union")[c("X", "R")])
   if (sc$truth == "contiguous" && s$family != "spatiotemporal") approaches$broad <- timed({
     cand <- if (s$family == "spatial") .spatial_candidates(s$coords) else .temporal_candidates(s$time, "ar")
     band <- cand[, seq_len(ceiling(ncol(cand) / 3)), drop = FALSE]

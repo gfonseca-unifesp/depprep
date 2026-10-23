@@ -97,7 +97,7 @@ one_replicate <- function(sc, r, sig_d4) {
 
   # grouped corrections
   grouped <- function(name, gr, mode = "conditional") {
-    cr <- timed(correct(s, gr, mode = mode, scope = "groups", seed = bseed))
+    cr <- timed(correct(s, gr, mode = mode, scope = "groups", seed = bseed, data_basis = "union"))   # as run, before D17
     v <- if (mode == "conditional") verify(cr$value, s) else NULL
     cap <- if (mode == "conditional") {
       g <- if (inherits(gr, "data.frame")) gr$group else gr
