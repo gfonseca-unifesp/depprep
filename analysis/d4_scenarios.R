@@ -109,7 +109,12 @@ truth_table <- function(groups) {
 # classes), "contiguous" (the same with 3 classes contiguous in space or time) or
 # "crossed" (D14: 0.5 within two blocks that cross the regime groups, each holding
 # every other variable of every group, and `between` across them; 3 random classes).
-simulate <- function(sc, seed, truth = "null", between = if (is.null(sc$between)) 0 else sc$between) {
+# Stage 7 perturbations (protocol-v1, section 4): `counts` turns that share of the
+# variables into counts; `nonstationary` (e.g. c(0.5, 1.5)) makes the range of every
+# spatial field grow along x from 0.5 to 1.5 times its nominal value. Both default to none,
+# which gives the earlier data.
+simulate <- function(sc, seed, truth = "null", between = if (is.null(sc$between)) 0 else sc$between,
+                     counts = 0, nonstationary = NULL) {
   sm <- if (is.null(sc$smoothness)) 0.5 else sc$smoothness
   variant <- if (is.null(sc$variant)) "base" else sc$variant
   g <- switch(variant,
@@ -120,15 +125,22 @@ simulate <- function(sc, seed, truth = "null", between = if (is.null(sc$between)
       fields = fields_groups(sm),
       temporal = temporal_groups(if (sc$heterogeneity == "high") 0.3 else 0.6),
       spatiotemporal = st_groups(sm)))
+  if (!is.null(nonstationary)) {
+    attrs <- attributes(g)
+    g <- lapply(g, function(x) { if (x$regime %in% c("exponential", "matern") && is.null(x$shared_with))
+      x$params$nonstationary <- nonstationary; x })
+    attributes(g) <- attrs
+  }
   R_true <- switch(truth, null = NULL,
                    crossed = make_R_true(g, "crossed", within = 0.5, between = between, n_blocks = 2),
                    make_R_true(g, "blocks", within = 0.5, between = between))
   classes <- switch(truth, null = NULL, structured = , crossed = list(k = 3, type = "random", effect = 1),
                     contiguous = list(k = 3, type = "contiguous", effect = 1))
   switch(sc$family,
-    spatial = , fields = sim_spatial(sc$n, g, R_true = R_true, classes = classes, seed = seed),
-    temporal = sim_temporal(sc$n_times, g, R_true = R_true, classes = classes, seed = seed),
-    spatiotemporal = sim_spatiotemporal(sc$n, sc$n_times, g, R_true = R_true, classes = classes, seed = seed))
+    spatial = , fields = sim_spatial(sc$n, g, R_true = R_true, classes = classes, seed = seed, counts = counts),
+    temporal = sim_temporal(sc$n_times, g, R_true = R_true, classes = classes, seed = seed, counts = counts),
+    spatiotemporal = sim_spatiotemporal(sc$n, sc$n_times, g, R_true = R_true, classes = classes, seed = seed,
+                                        counts = counts))
 }
 
 # Stage 6 pilot: the largest affordable size of each family, in three truths.
