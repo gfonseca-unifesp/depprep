@@ -132,12 +132,14 @@ one_rep <- function(g, r) {
   # Q3 warning (verify(); space-time: the group bases, as calibrated) and k/n of the unions
   q3_fit <- if (fam == "spatiotemporal") cr_grp else cr_def
   v <- verify(q3_fit, s, nperm = 0, seed = seed)
-  kn_def <- if (fam == "spatiotemporal") NA_real_ else attr(cr_def$bases[[1]], "kn")   # the global basis
+  # no basis when the diagnosis finds no dependent variable (small spatial samples)
+  kn_def <- if (fam == "spatiotemporal" || !length(cr_def$bases)) NA_real_ else attr(cr_def$bases[[1]], "kn")   # global
+  kn_var <- if (is.null(cr_var$bases$union)) NA_real_ else attr(cr_var$bases$union, "kn")
   extra <- rbind(extra, data.frame(approach = c("default", "default", "default", "variables", "variables"),
     method = c("verify", "verify", "kn", "kn", "kn"),
     metric = c("q3_statistic", "q3_warning", "union_kn", "union_kn", "union_capped"),
     value = c(v$q3$statistic, as.numeric(v$q3$warning), if (is.null(kn_def)) NA_real_ else kn_def,
-              attr(cr_var$bases$union, "kn"), as.numeric(any(grepl("capped", cr_var$warnings))))))
+              kn_var, as.numeric(any(grepl("capped", cr_var$warnings))))))
   out <- rbind(res, extra)
   cbind(combo = g$combo, replicate = r, seed = seed, out,
         seconds_replicate = as.numeric(difftime(Sys.time(), t_rep, units = "secs")))
@@ -151,7 +153,17 @@ clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(qu
   source(file.path("analysis", "d4_scenarios.R")); NULL }, getwd())
 clusterExport(cl, c("base_seed", "one_rep"))
 cat(format(Sys.time()), "start;", nrow(grid), "combinations\n", file = log_file, append = TRUE)
-run_reps <- function(g, reps) do.call(rbind, parLapply(cl, reps, function(r, g) one_rep(g, r), g = g))
+# a replicate that fails is recorded in errors.csv and the run goes on; failed replicates
+# are fixed and rerun afterwards (they keep their seeds)
+err_file <- file.path(out_dir, "errors.csv")
+run_reps <- function(g, reps) {
+  out <- parLapply(cl, reps, function(r, g) tryCatch(one_rep(g, r), error = function(e)
+    data.frame(combo = g$combo, replicate = r, message = conditionMessage(e))), g = g)
+  bad <- vapply(out, function(x) "message" %in% names(x), TRUE)
+  if (any(bad)) utils::write.table(do.call(rbind, out[bad]), err_file, sep = ",", row.names = FALSE,
+                                   col.names = !file.exists(err_file), append = TRUE)
+  do.call(rbind, out[!bad])
+}
 timing_file <- file.path(out_dir, "timing_st100.csv")
 for (k in grid$combo) {
   g <- grid[grid$combo == k, ]
