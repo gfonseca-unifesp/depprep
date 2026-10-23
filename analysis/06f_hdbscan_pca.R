@@ -1,6 +1,7 @@
 # Stage 6, before the protocol is frozen — two quick checks on the pilot data:
-# 1. HDBSCAN (decision D18): does the density-based clustering change with the
-#    correction, and with how much spread? Its contrasts enter the replicate count of D8.
+# 1. HDBSCAN and DBSCAN (decision D18): does the density-based clustering change with
+#    the correction, and with how much spread? HDBSCAN's contrasts enter the replicate
+#    count of D8; DBSCAN (radius by the silhouette) is compared with it.
 # 2. The PCA metric against the true signal (freeze plan, item 4): does the corrected PCA
 #    stop moving away from the true axes once the axes include the class effects?
 #
@@ -48,7 +49,8 @@ one_check <- function(sc, r) {
     keep <- utils::tail(seq_len(n), nrow(A$X))             # whitening drops the first times
     t_a <- list(R_true = tr$R_true, classes = tr$classes[keep], signal = tr$signal[keep, , drop = FALSE])
     rbind(cbind(approach = a, run_downstream(A$X, "pca", truth = t_a, R = A$R)),
-          cbind(approach = a, run_downstream(A$X, "hdbscan", truth = t_a, seed = seed)))
+          cbind(approach = a, run_downstream(A$X, "hdbscan", truth = t_a, seed = seed)),
+          cbind(approach = a, run_downstream(A$X, "dbscan", truth = t_a, seed = seed)))
   }))
   cbind(scenario = sc$id, replicate = r, seed = seed, res)
 }

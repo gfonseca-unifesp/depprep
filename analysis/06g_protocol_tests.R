@@ -134,5 +134,10 @@ cost <- data.frame(
   replicates = c(100, 100, 100, 100, 50))
 cost$core_hours <- cost$seconds * cost$combinations * cost$replicates / 3600
 write.csv(cost, file.path("results", "protocol_cost.csv"), row.names = FALSE)
+
+# D18: HDBSCAN against DBSCAN (radius by the silhouette), descriptive, for discussion
+dens <- hd[hd$method %in% c("hdbscan", "dbscan") & hd$metric %in% c("ari", "ari_clustered", "noise_share", "n_clusters", "clusters_above_1"), ]
+dc <- stats::aggregate(value ~ label + truth + approach + method + metric, data = dens, FUN = function(v) mean(v[is.finite(v)]))
+write.csv(dc, file.path("results", "density_comparison.csv"), row.names = FALSE)
 print(tests, digits = 3, row.names = FALSE)
 print(cost, digits = 3, row.names = FALSE)
