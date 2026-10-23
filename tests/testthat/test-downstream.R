@@ -86,3 +86,18 @@ test_that("contiguity links connect the graph and the Rand index is correct", {
   expect_equal(depprep:::.rand_index(c(1, 1, 2, 2), c(2, 2, 1, 1)), 1)
   expect_equal(depprep:::.rand_index(c(1, 1, 2, 2), c(1, 2, 1, 2)), 2 / 6)
 })
+
+test_that("PCA is scored against the true signal and large data sets are subsampled", {
+  set.seed(5)
+  n <- 400; cls <- rep(1:2, each = n / 2)
+  sig <- cbind(matrix(stats::rnorm(n * 4), n) + 2 * cls, matrix(stats::rnorm(n * 4), n))
+  X <- sig + matrix(stats::rnorm(n * 8, sd = 0.3), n)
+  pc <- run_downstream(X, "pca", truth = list(signal = sig))
+  d <- pc$value[pc$metric == "subspace_distance_signal"]
+  expect_lt(d, 0.2)                                        # the leading axis is the class axis of the signal
+  km <- run_downstream(X, "kmeans", truth = list(classes = cls), max_n = 100, seed = 2)
+  expect_equal(km$value[km$metric == "subsample"], 0.25)
+  expect_gt(km$value[km$metric == "ari_true_k"], 0.7)
+  expect_identical(run_downstream(X, "kmeans", truth = list(classes = cls), max_n = 100, seed = 2), km)
+  expect_false("subsample" %in% run_downstream(X, "kmeans", truth = list(classes = cls), seed = 2)$metric)
+})

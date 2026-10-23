@@ -12,7 +12,8 @@ run_downstream(
   distance = c("euclidean", "gower"),
   k_max = 6,
   B_gap = 20,
-  seed = 1L
+  seed = 1L,
+  max_n = 3000
 )
 }
 \arguments{
@@ -38,6 +39,11 @@ sites at the same time and to its own site at the next time.}
 \item{B_gap}{Reference data sets for the gap statistic.}
 
 \item{seed}{Seed of k-means, the gap statistic and the SOM.}
+
+\item{max_n}{Largest number of observations used by MDS, k-means, the SOM and the
+constrained clustering. Larger data sets (space-time grids) are scored on a random
+subsample of \code{max_n} rows, drawn with \code{seed}; the truth is subset alike, and the
+metric \code{subsample} records the share used. PCA always uses every row.}
 }
 \value{
 A data frame with \code{method}, \code{metric} and \code{value}.
@@ -49,7 +55,10 @@ protocol, comparing the result with the truth of a simulation:
 \itemize{
 \item \code{"pca"} (on the correlation matrix \code{R}, or on \code{cor(X)}): distance between the
 estimated and the true leading subspace (eigenvectors of \code{R_true} with eigenvalue
-above 1, see \code{\link[=basis_distance]{basis_distance()}}); number of components above the broken-stick
+above 1, see \code{\link[=basis_distance]{basis_distance()}}); the same distance to the leading subspace of the
+correlation of the true signal (\code{truth$signal}: residual plus class effects, as many
+axes as pass the broken-stick; \code{subspace_distance_signal}), because the classes add
+structure shared by all variables that \code{R_true} does not hold; number of components above the broken-stick
 expectation; whether the first eigenvalue exceeds it (a spurious axis when
 \code{R_true} is the identity);
 \item \code{"mds"} (classical MDS of the observations, Euclidean or Gower distances):

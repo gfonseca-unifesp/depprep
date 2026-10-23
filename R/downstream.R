@@ -5,7 +5,10 @@
 #' protocol, comparing the result with the truth of a simulation:
 #' * `"pca"` (on the correlation matrix `R`, or on `cor(X)`): distance between the
 #'   estimated and the true leading subspace (eigenvectors of `R_true` with eigenvalue
-#'   above 1, see [basis_distance()]); number of components above the broken-stick
+#'   above 1, see [basis_distance()]); the same distance to the leading subspace of the
+#'   correlation of the true signal (`truth$signal`: residual plus class effects, as many
+#'   axes as pass the broken-stick; `subspace_distance_signal`), because the classes add
+#'   structure shared by all variables that `R_true` does not hold; number of components above the broken-stick
 #'   expectation; whether the first eigenvalue exceeds it (a spurious axis when
 #'   `R_true` is the identity);
 #' * `"mds"` (classical MDS of the observations, Euclidean or Gower distances):
@@ -38,6 +41,10 @@
 #'   the site and the third the time; a row is linked to the rows of the neighbouring
 #'   sites at the same time and to its own site at the next time.
 #' @param R Correlation matrix for PCA (`cor(X)` when `NULL`).
+#' @param max_n Largest number of observations used by MDS, k-means, the SOM and the
+#'   constrained clustering. Larger data sets (space-time grids) are scored on a random
+#'   subsample of `max_n` rows, drawn with `seed`; the truth is subset alike, and the
+#'   metric `subsample` records the share used. PCA always uses every row.
 #' @param distance `"euclidean"` or `"gower"` (MDS).
 #' @param k_max Largest number of groups for the gap statistic.
 #' @param B_gap Reference data sets for the gap statistic.
@@ -51,7 +58,7 @@
 #' run_downstream(X, "kmeans", truth = list(classes = rep(1:2, each = 50)))
 #' @export
 run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som", "constrained"), truth = list(), R = NULL,
-                           distance = c("euclidean", "gower"), k_max = 6, B_gap = 20, seed = 1L) {
+                           distance = c("euclidean", "gower"), k_max = 6, B_gap = 20, seed = 1L, max_n = 3000) {
   method <- match.arg(method)
   distance <- match.arg(distance)
   X <- as.matrix(X)
@@ -64,16 +71,37 @@ run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som", "constra
     bs <- rev(cumsum(1 / rev(seq_len(p))))                  # broken-stick: sum_{i=k}^{p} 1/i
     above <- ev$values > bs
     n_bs <- if (above[1]) which.min(c(above, FALSE)) - 1 else 0
+    dist_to <- function(vectors, q) if (q > 0) basis_distance(
+      structure(ev$vectors[, seq_len(q), drop = FALSE], class = "depprep_basis"),
+      structure(vectors[, seq_len(q), drop = FALSE], class = "depprep_basis")) else NA_real_
     dist_true <- NA_real_
     if (!is.null(truth$R_true)) {
       et <- eigen(truth$R_true, symmetric = TRUE)
-      q <- sum(et$values > 1 + 1e-8)
-      if (q > 0) dist_true <- basis_distance(structure(ev$vectors[, seq_len(q), drop = FALSE], class = "depprep_basis"),
-                                             structure(et$vectors[, seq_len(q), drop = FALSE], class = "depprep_basis"))
+      dist_true <- dist_to(et$vectors, sum(et$values > 1 + 1e-8))
     }
-    return(out(subspace_distance = dist_true, components_above_broken_stick = n_bs,
+    # against the correlation of the true signal (residual plus class effects): the
+    # classes add structure shared by all variables that R_true does not hold
+    dist_signal <- NA_real_
+    if (!is.null(truth$signal)) {
+      es <- eigen(suppressWarnings(stats::cor(as.matrix(truth$signal))), symmetric = TRUE)
+      a_s <- es$values > bs
+      q_s <- if (a_s[1]) which.min(c(a_s, FALSE)) - 1 else 0
+      dist_signal <- dist_to(es$vectors, max(1, q_s))
+    }
+    return(out(subspace_distance = dist_true, subspace_distance_signal = dist_signal, components_above_broken_stick = n_bs,
                first_above_broken_stick = as.numeric(above[1]), first_eigen_share = ev$values[1] / p))
   }
+  share <- 1
+  if (nrow(X) > max_n) {                                  # space-time grids: score a seeded subsample
+    keep <- sort(.with_stream(seed, .streams[["subsample"]], sample(nrow(X), max_n)))
+    share <- max_n / nrow(X)
+    X <- X[keep, , drop = FALSE]
+    for (nm in intersect(c("classes", "signal", "position"), names(truth))) {
+      truth[[nm]] <- if (is.null(dim(truth[[nm]]))) truth[[nm]][keep] else as.matrix(truth[[nm]])[keep, , drop = FALSE]
+    }
+  }
+  out0 <- out
+  out <- function(...) { r <- out0(...); if (share < 1) r <- rbind(r, out0(subsample = share)); r }
   Z <- scale(X)
   Z[!is.finite(Z)] <- 0
   .with_stream(seed, .streams[["downstream"]], {
