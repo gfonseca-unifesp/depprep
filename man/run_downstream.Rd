@@ -6,7 +6,7 @@
 \usage{
 run_downstream(
   X,
-  method = c("pca", "mds", "kmeans", "som", "hdbscan", "constrained"),
+  method = c("pca", "mds", "kmeans", "som", "hdbscan", "dbscan", "constrained"),
   truth = list(),
   R = NULL,
   distance = c("euclidean", "gower"),
@@ -19,7 +19,8 @@ run_downstream(
 \arguments{
 \item{X}{Numeric matrix (observations x variables).}
 
-\item{method}{\code{"pca"}, \code{"mds"}, \code{"kmeans"}, \code{"som"}, \code{"hdbscan"} or \code{"constrained"}.}
+\item{method}{\code{"pca"}, \code{"mds"}, \code{"kmeans"}, \code{"som"}, \code{"hdbscan"}, \code{"dbscan"} or
+\code{"constrained"}.}
 
 \item{truth}{List with any of: \code{R_true} (p x p), \code{classes} (one label per row of
 \code{X}), \code{signal} (matrix, the true signal of each observation, for MDS) and
@@ -82,6 +83,13 @@ statistic for k-means), the share of noise points (\code{noise_share}) and the A
 the true classes, the noise points counted as a group of their own (\code{ari}); also the
 ARI on the clustered points only (\code{ari_clustered}, descriptive): HDBSCAN leaves many
 points as noise even around clean classes, so \code{ari} mixes purity and coverage.
+\item \code{"dbscan"} (\code{dbscan::dbscan()}, decision D18, compared with HDBSCAN): the same
+minimum number of points; the radius \code{eps} is chosen in each data matrix, among the
+deciles (10\% to 90\%) of the distances to the \code{minPts - 1}-th neighbour, as the one
+whose clusters have the largest mean silhouette (clustered points only). The
+silhouette needs at least two clusters, so this rule leans towards finding groups;
+when no radius gives two, the median distance is used. Returns the same metrics as
+\code{"hdbscan"} plus \code{eps} and \code{silhouette}.
 \item \code{"constrained"} (contiguity-constrained Ward clustering, \code{adespatial::constr.hclust};
 Legendre & Legendre 2012, sections 12.6 and 13.3): only observations linked in
 space or time may merge. The links come from \code{truth$position} (see below); the tree

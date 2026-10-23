@@ -32,6 +32,13 @@
 #'   the true classes, the noise points counted as a group of their own (`ari`); also the
 #'   ARI on the clustered points only (`ari_clustered`, descriptive): HDBSCAN leaves many
 #'   points as noise even around clean classes, so `ari` mixes purity and coverage.
+#' * `"dbscan"` (`dbscan::dbscan()`, decision D18, compared with HDBSCAN): the same
+#'   minimum number of points; the radius `eps` is chosen in each data matrix, among the
+#'   deciles (10% to 90%) of the distances to the `minPts - 1`-th neighbour, as the one
+#'   whose clusters have the largest mean silhouette (clustered points only). The
+#'   silhouette needs at least two clusters, so this rule leans towards finding groups;
+#'   when no radius gives two, the median distance is used. Returns the same metrics as
+#'   `"hdbscan"` plus `eps` and `silhouette`.
 #' * `"constrained"` (contiguity-constrained Ward clustering, `adespatial::constr.hclust`;
 #'   Legendre & Legendre 2012, sections 12.6 and 13.3): only observations linked in
 #'   space or time may merge. The links come from `truth$position` (see below); the tree
@@ -42,7 +49,8 @@
 #'   regions or periods, which any decorrelation removes.
 #'
 #' @param X Numeric matrix (observations x variables).
-#' @param method `"pca"`, `"mds"`, `"kmeans"`, `"som"`, `"hdbscan"` or `"constrained"`.
+#' @param method `"pca"`, `"mds"`, `"kmeans"`, `"som"`, `"hdbscan"`, `"dbscan"` or
+#'   `"constrained"`.
 #' @param truth List with any of: `R_true` (p x p), `classes` (one label per row of
 #'   `X`), `signal` (matrix, the true signal of each observation, for MDS) and
 #'   `position` (coordinates or times of the rows, for the spurious-pattern metrics and
@@ -68,7 +76,7 @@
 #' X <- rbind(matrix(rnorm(150, 0), 50), matrix(rnorm(150, 3), 50))
 #' run_downstream(X, "kmeans", truth = list(classes = rep(1:2, each = 50)))
 #' @export
-run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som", "hdbscan", "constrained"), truth = list(), R = NULL,
+run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som", "hdbscan", "dbscan", "constrained"), truth = list(), R = NULL,
                            distance = c("euclidean", "gower"), k_max = 6, B_gap = 20, seed = 1L, max_n = 3000) {
   method <- match.arg(method)
   distance <- match.arg(distance)
@@ -144,6 +152,31 @@ run_downstream <- function(X, method = c("pca", "mds", "kmeans", "som", "hdbscan
                  ari_clustered = if (is.na(k_true) || sum(cl > 0) < 2) NA_real_ else
                    mclust::adjustedRandIndex(cl[cl > 0], truth$classes[cl > 0]),
                  min_points = min_pts))
+    }
+    if (method == "dbscan") {
+      min_pts <- max(10L, as.integer(ceiling(0.02 * nrow(Z))))
+      kd <- dbscan::kNNdist(Z, k = min_pts - 1)
+      grid <- unique(stats::quantile(kd, seq(0.1, 0.9, by = 0.1), names = FALSE))
+      D <- stats::dist(Z)
+      fit <- lapply(grid, function(e) {
+        cl <- dbscan::dbscan(Z, eps = e, minPts = min_pts)$cluster
+        ok <- cl > 0
+        sil <- if (length(unique(cl[ok])) >= 2) {
+          Dm <- as.matrix(D)[ok, ok, drop = FALSE]
+          mean(cluster::silhouette(cl[ok], stats::as.dist(Dm))[, "sil_width"])
+        } else NA_real_
+        list(cl = cl, sil = sil, eps = e)
+      })
+      sils <- vapply(fit, `[[`, 0, "sil")
+      best <- if (any(is.finite(sils))) fit[[which.max(sils)]] else
+        list(cl = dbscan::dbscan(Z, eps = stats::median(kd), minPts = min_pts)$cluster, sil = NA_real_, eps = stats::median(kd))
+      cl <- best$cl
+      n_cl <- length(setdiff(unique(cl), 0))
+      return(out(n_clusters = n_cl, clusters_above_1 = as.numeric(n_cl > 1), noise_share = mean(cl == 0),
+                 ari = if (is.na(k_true)) NA_real_ else mclust::adjustedRandIndex(cl, truth$classes),
+                 ari_clustered = if (is.na(k_true) || sum(cl > 0) < 2) NA_real_ else
+                   mclust::adjustedRandIndex(cl[cl > 0], truth$classes[cl > 0]),
+                 eps = best$eps, silhouette = best$sil, min_points = min_pts))
     }
     if (method == "constrained") {
       if (is.null(truth$position)) stop("`truth$position` is required for the constrained clustering.")

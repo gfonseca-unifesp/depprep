@@ -121,3 +121,16 @@ test_that("HDBSCAN finds well separated classes and no groups in noise", {
   expect_true(is.na(v0["ari"]))
   expect_identical(run_downstream(W, "hdbscan", seed = 1), h0)
 })
+
+
+test_that("DBSCAN chooses its radius by the silhouette and finds separated classes", {
+  set.seed(9)
+  cls <- rep(1:3, each = 80)
+  X <- matrix(stats::rnorm(240 * 4), 240) + 4 * cbind(cls == 1, cls == 2, cls == 3, 0)
+  d <- run_downstream(X, "dbscan", truth = list(classes = cls))
+  v <- stats::setNames(d$value, d$metric)
+  expect_gte(unname(v["n_clusters"]), 3)                   # the silhouette may split a class (D18 discussion)
+  expect_gt(v["ari_clustered"], 0.8)
+  expect_true(is.finite(v["silhouette"]) && v["eps"] > 0)
+  expect_identical(run_downstream(X, "dbscan", truth = list(classes = cls)), d)
+})
