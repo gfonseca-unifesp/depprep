@@ -5,7 +5,7 @@
 #   correlation  PCA      spurious axis above the broken-stick | distance to the true axes
 #   distances    MDS      configuration that maps the positions | Procrustes with the truth
 #   prototypes   k-means and SOM: map that reproduces the positions (SOM) | ARI (k-means)
-#   density      HDBSCAN  more than one cluster in null data | ARI (noise as a group)
+#   density      DBSCAN: more than one cluster in null data | HDBSCAN: ARI (noise as a group)
 # For each family and data family (spatial, temporal, space-time): one primary metric in
 # the null truth (H1) and one in the structured truth (H3, H4). The proposal is the
 # default of correct(): R (D7) for PCA, the data matrix with each variable on its own
@@ -29,11 +29,11 @@ hd <- do.call(rbind, lapply(list.files(file.path("results", "pilot_hdbscan"), "^
 hd <- merge(hd, pilot_scenarios[, c("id", "label", "family", "truth")], by.x = "scenario", by.y = "id")
 keep_cols <- c("scenario", "replicate", "label", "family", "truth", "approach", "method", "metric", "value")
 long <- rbind(pr[pr$scenario <= 12, keep_cols],
-              hd[hd$method == "hdbscan" | hd$metric == "subspace_distance_signal", keep_cols])
+              hd[hd$method %in% c("hdbscan", "dbscan") | hd$metric == "subspace_distance_signal", keep_cols])
 
 fam <- data.frame(
   technique = c("correlation", "distances", "prototypes", "density"),
-  h1_method = c("pca", "mds_euclidean", "som", "hdbscan"),
+  h1_method = c("pca", "mds_euclidean", "som", "dbscan"),     # density, H1: DBSCAN (D18, amended 2026-10-23)
   h1_metric = c("first_above_broken_stick", "procrustes_position", "map_position_cor", "clusters_above_1"),
   h1_delta = c(0.10, 0.05, 0.05, 0.10),
   h3_method = c("pca", "mds_euclidean", "kmeans", "hdbscan"),
