@@ -122,6 +122,25 @@ test_that("the Q3 warning fires for contiguous classes and not for the null trut
   expect_gt(v1$q3$statistic, v0$q3$statistic)
 })
 
+test_that("the default Q3 threshold depends on the data family and an explicit one overrides it", {
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("none", 2, "none"))
+  s <- sim_spatial(150, g, seed = 3)
+  grp <- stats::setNames(c("g1", "g1", "g1", "none", "none"), colnames(s$X))
+  cr <- correct(s, grp, seed = 1)
+  expect_equal(verify(cr, s, nperm = 0)$q3$threshold, 0.16)
+  v <- verify(cr, s, nperm = 0, q3_threshold = 0.01)
+  expect_equal(v$q3$threshold, 0.01)
+  expect_true(v$q3$warning)
+  gt <- sim_groups(sim_group("a", 3, "ar1", phi = 0.9), sim_group("none", 2, "none"))
+  st <- sim_temporal(120, gt, seed = 3)
+  gr <- data.frame(variable = colnames(st$X), group = c("g1", "g1", "g1", "none", "none"),
+                   group_type = c("ar", "ar", "ar", "none", "none"))
+  class(gr) <- c("depprep_grouping", "data.frame"); attr(gr, "period") <- c(g1 = NA)
+  ct <- correct(st, gr, seed = 1)
+  expect_equal(verify(ct, st, nperm = 0)$q3$threshold, 0.19)
+  expect_equal(unname(depprep:::.q3_thresholds[c("spatial", "temporal", "spatiotemporal")]), c(0.16, 0.19, 0.13))
+})
+
 test_that("verify() tests each column of an own-basis data matrix against its own basis", {
   g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("none", 2, "none"))
   s <- sim_spatial(200, g, seed = 6)

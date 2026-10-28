@@ -56,9 +56,14 @@
 #' `q3$share` gives that association as a share of the total, `sum |cov_large| /
 #' sum (|cov_large| + |cov_residual|)`, for information only: it is high whenever little
 #' association is left in the residuals, also in the null truth, so it does not tell
-#' classes from shared fields. The default threshold was calibrated in
-#' `analysis/06c_q3_warning.R` on the stage 6 pilot scenarios, contiguous classes against
-#' the null truth. In those designs the large-scale fields are shared within groups of
+#' classes from shared fields. The statistic grows with the size of the basis also without
+#' contiguous classes (the projected parts of independent autocorrelated variables are
+#' correlated by chance), so the default threshold depends on the data family: 0.16 in
+#' space, 0.19 in time, 0.13 in space-time. They were calibrated in
+#' `analysis/07d_q3_recalibration.R` on the stage 7 grid (the midpoint between the 97.5th
+#' percentile of the truths without contiguous classes and the 5th percentile of the
+#' contiguous truth) and validated there on new seeds: at most 1.2% of warnings without
+#' contiguous classes, at least 98.8% with them. In those designs the large-scale fields are shared within groups of
 #' 6-8 of the 30 variables, while contiguous classes reach every variable. The warning
 #' cannot tell a large-scale field shared by most variables from regional classes: it
 #' says that much of the association between variables is at the scale of the basis.
@@ -74,7 +79,8 @@
 #' @param nperm Permutations of the Mantel and Ljung-Box tests; 0 skips the Mantel
 #'   correlogram and takes the Ljung-Box p-values from the chi-square distribution.
 #' @param q3_threshold Mean absolute association carried by the projected part above
-#'   which the Q3 warning is raised.
+#'   which the Q3 warning is raised; `NULL` takes the threshold of the data family (see
+#'   Details).
 #' @param seed Seed of the permutations.
 #' @return A list of class `depprep_verification` with
 #'   * `variables` (data frame: group, `removed`, `autocor_before`, `autocor_after`,
@@ -103,7 +109,7 @@
 #' @importFrom vegan mantel.correlog
 #' @export
 verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, period = NULL, alpha = 0.05,
-                   nperm = 199, q3_threshold = 0.14, seed = 1L) {
+                   nperm = 199, q3_threshold = NULL, seed = 1L) {
   stopifnot(inherits(corrected, "depprep_corrected"))
   if (corrected$mode == "scale") stop("`verify()` needs the conditional or whiten mode.", call. = FALSE)
   if (inherits(X, "depprep_sim")) {
@@ -114,6 +120,7 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
   E <- corrected$X
   grp <- corrected$group
   family <- if (!is.null(coords) && !is.null(index)) "spatiotemporal" else if (!is.null(coords)) "spatial" else "temporal"
+  if (is.null(q3_threshold)) q3_threshold <- .q3_thresholds[[family]]
   # rows in time order in time: the conditional mode keeps the rows of X, the AR filters of
   # the whitening return them in time order without the first times
   ord <- if (family == "temporal") order(time) else seq_len(nrow(X))
@@ -235,6 +242,10 @@ print.depprep_verification <- function(x, ...) {
   if (length(x$notes)) cat("Notes:", paste(x$notes, collapse = "; "), "\n")
   invisible(x)
 }
+
+# Default thresholds of the Q3 warning by data family (amendment protocol-v1.2,
+# analysis/07d_q3_recalibration.R).
+.q3_thresholds <- c(spatial = 0.16, temporal = 0.19, spatiotemporal = 0.13)
 
 # Basis each column of the data matrix was corrected with when data_basis = "own": the
 # variable's own selection, or its group's basis when the bases were given; empty for the

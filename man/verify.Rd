@@ -13,7 +13,7 @@ verify(
   period = NULL,
   alpha = 0.05,
   nperm = 199,
-  q3_threshold = 0.14,
+  q3_threshold = NULL,
   seed = 1L
 )
 }
@@ -33,7 +33,8 @@ it from \code{corrected} when it records one.}
 correlogram and takes the Ljung-Box p-values from the chi-square distribution.}
 
 \item{q3_threshold}{Mean absolute association carried by the projected part above
-which the Q3 warning is raised.}
+which the Q3 warning is raised; \code{NULL} takes the threshold of the data family (see
+Details).}
 
 \item{seed}{Seed of the permutations.}
 }
@@ -114,9 +115,14 @@ all pairs of \verb{|cov_large| / (sd_x sd_y)}, the projected part of each correl
 the union of the bases. The warning is raised when it exceeds \code{q3_threshold}.
 \code{q3$share} gives that association as a share of the total, \verb{sum |cov_large| / sum (|cov_large| + |cov_residual|)}, for information only: it is high whenever little
 association is left in the residuals, also in the null truth, so it does not tell
-classes from shared fields. The default threshold was calibrated in
-\verb{analysis/06c_q3_warning.R} on the stage 6 pilot scenarios, contiguous classes against
-the null truth. In those designs the large-scale fields are shared within groups of
+classes from shared fields. The statistic grows with the size of the basis also without
+contiguous classes (the projected parts of independent autocorrelated variables are
+correlated by chance), so the default threshold depends on the data family: 0.16 in
+space, 0.19 in time, 0.13 in space-time. They were calibrated in
+\verb{analysis/07d_q3_recalibration.R} on the stage 7 grid (the midpoint between the 97.5th
+percentile of the truths without contiguous classes and the 5th percentile of the
+contiguous truth) and validated there on new seeds: at most 1.2\% of warnings without
+contiguous classes, at least 98.8\% with them. In those designs the large-scale fields are shared within groups of
 6-8 of the 30 variables, while contiguous classes reach every variable. The warning
 cannot tell a large-scale field shared by most variables from regional classes: it
 says that much of the association between variables is at the scale of the basis.
