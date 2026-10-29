@@ -272,13 +272,19 @@ print.depprep_basis <- function(x, ...) {
   ord <- order(contrib, decreasing = TRUE)
   chosen <- integer(0)
   explained <- 0
+  res <- Y                                                 # Y minus its part on the chosen terms
   for (j in ord) {
     k <- length(chosen) + 1
     if (k / n > kn_max) break
-    res <- Y - cand[, chosen, drop = FALSE] %*% crossprod(cand[, chosen, drop = FALSE], Y)
-    perm <- vapply(seq_len(nperm), function(b) sum(crossprod(cand[, j], res[sample.int(n), , drop = FALSE])^2), 0)
+    # the permutation test of the term in one product: column b of Cp holds the candidate
+    # at the rows of permutation b, so crossprod(Cp, res)[b, ] = crossprod(cand[, j], res[perm_b, ])
+    perms <- vapply(seq_len(nperm), function(b) sample.int(n), integer(n))
+    Cp <- matrix(0, n, nperm)
+    Cp[cbind(as.vector(perms), rep(seq_len(nperm), each = n))] <- cand[, j]
+    perm <- rowSums(crossprod(Cp, res)^2)
     if ((1 + sum(perm >= contrib[j])) / (nperm + 1) > alpha) break
     chosen <- c(chosen, j)
+    res <- res - cand[, j] %*% crossprod(cand[, j], Y)
     explained <- explained + contrib[j]
     # second stopping rule, checked after adding the term: otherwise a single dominant
     # pattern (one harmonic explaining most of a seasonal group) could never enter

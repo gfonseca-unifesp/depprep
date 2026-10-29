@@ -155,3 +155,36 @@ test_that("capture and absorption measure what a basis removes", {
   expect_equal(ca[["capture"]], 1)
   expect_lt(abs(ca[["absorption"]]), 0.1)
 })
+
+test_that(".forward_select() with batched permutations matches the term-by-term loop", {
+  # the loop of version 0.0.0.9000: one permutation at a time, residual recomputed each step
+  reference <- function(Y, cand, kn_max, alpha, nperm) {
+    n <- nrow(Y); tss <- sum(Y^2)
+    contrib <- rowSums(crossprod(cand, Y)^2)
+    perm_all <- vapply(seq_len(nperm), function(b) sum(crossprod(cand, Y[sample.int(n), , drop = FALSE])^2), 0)
+    if ((1 + sum(perm_all >= sum(contrib))) / (nperm + 1) > alpha) return(character(0))
+    m <- ncol(cand); adj_all <- 1 - (1 - sum(contrib) / tss) * (n - 1) / (n - m - 1)
+    chosen <- integer(0); explained <- 0
+    for (j in order(contrib, decreasing = TRUE)) {
+      k <- length(chosen) + 1
+      if (k / n > kn_max) break
+      res <- Y - cand[, chosen, drop = FALSE] %*% crossprod(cand[, chosen, drop = FALSE], Y)
+      perm <- vapply(seq_len(nperm), function(b) sum(crossprod(cand[, j], res[sample.int(n), , drop = FALSE])^2), 0)
+      if ((1 + sum(perm >= contrib[j])) / (nperm + 1) > alpha) break
+      chosen <- c(chosen, j); explained <- explained + contrib[j]
+      if (1 - (1 - explained / tss) * (n - 1) / (n - k - 1) >= adj_all) break
+    }
+    colnames(cand)[chosen]
+  }
+  s <- sim_spatial(150, sim_groups(sim_group("a", 4, "exponential", range = 0.3)), seed = 2)
+  Y <- scale(s$X, scale = FALSE)
+  cand <- depprep:::.spatial_candidates(s$coords)
+  set.seed(7); new <- depprep:::.forward_select(Y, cand, 0.25, 0.05, 99)
+  set.seed(7); old <- reference(Y, cand, 0.25, 0.05, 99)
+  expect_gt(length(old), 3)
+  expect_identical(new$terms, old)
+  # the random stream ends at the same place
+  set.seed(7); depprep:::.forward_select(Y, cand, 0.25, 0.05, 99); a <- stats::runif(1)
+  set.seed(7); reference(Y, cand, 0.25, 0.05, 99); b <- stats::runif(1)
+  expect_identical(a, b)
+})
