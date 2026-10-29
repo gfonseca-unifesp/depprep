@@ -49,11 +49,17 @@
 #' @param trend Put the trend terms (trend surface in space, cubic polynomial of time)
 #'   among the candidates. `FALSE` gives the eigenvector maps and harmonics only, as
 #'   used to compare the individual bases of the second grouping level.
+#' @param menu Optional [basis_menu()]: the structures to build the basis from, in place
+#'   of the candidates of `type` (which then only sets the data family and may be
+#'   `NULL`). Without a menu, the candidates of `type` above are the menu
+#'   `.menu_of_type()` and give the same basis as before the menus existed.
 #' @return A matrix with orthonormal columns (one row per observation) of class
-#'   `depprep_basis`, with attributes `type`, `k`, `kn` (k / n), `r2` (share of the
-#'   group's variance explained), `terms` (names of the selected candidates) and
-#'   `scalogram` (share of the group's variance explained by each candidate, selected
-#'   or not, in the order of the candidates; Borcard et al. 2004).
+#'   `depprep_basis`, with attributes `type` (`"menu"` when built from a menu without a
+#'   type), `k`, `kn` (k / n), `r2` (share of the group's variance explained), `terms`
+#'   (names of the selected candidates) and `scalogram` (share of the group's variance
+#'   explained by each candidate, selected or not, in the order of the candidates;
+#'   Borcard et al. 2004); with a menu, also `menu`, and `W` (the graph and weights kept)
+#'   with `term_mem(W = "auto")`.
 #' @references Blanchet, F. G., Legendre, P. and Borcard, D. (2008). Forward selection
 #'   of explanatory variables. Ecology 89, 2623-2632.
 #'
@@ -67,8 +73,8 @@
 #' b <- build_group_basis(s$X, coords = s$coords, type = "isotropic", seed = 1)
 #' attr(b, "k")
 #' @export
-build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL, type, period = NULL,
-                              kn_max = 0.25, alpha = 0.05, nperm = 199, seed = 1L, trend = TRUE) {
+build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL, type = NULL, period = NULL,
+                              kn_max = 0.25, alpha = 0.05, nperm = 199, seed = 1L, trend = TRUE, menu = NULL) {
   .stop_if_missing(X_group, coords, time)
   Y <- scale(as.matrix(X_group))
   Y[!is.finite(Y)] <- 0                                   # constant columns carry no information
@@ -76,27 +82,44 @@ build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL,
   spatial_types <- c("isotropic", "anisotropic")
   temporal_types <- c("seasonal", "trend", "ar")
   st_types <- c("temporal_common", "spatial_only", "moving", "separable_seasonal", "separable_ar1")
-  if (!type %in% c("none", spatial_types, temporal_types, st_types)) stop("Unknown `type`: ", type, call. = FALSE)
-  if (type %in% c("seasonal", "separable_seasonal") && is.null(period)) {
-    stop("`period` is required for seasonal groups.", call. = FALSE)
+  user_menu <- !is.null(menu)
+  if (is.null(menu)) {
+    if (is.null(type)) stop("Give `type` or `menu`.", call. = FALSE)
+    if (!type %in% c("none", spatial_types, temporal_types, st_types)) stop("Unknown `type`: ", type, call. = FALSE)
+    if (type %in% c("seasonal", "separable_seasonal") && is.null(period)) {
+      stop("`period` is required for seasonal groups.", call. = FALSE)
+    }
+    if (type == "none") return(.as_basis(matrix(0, n, 0), type, n, 0, character(0), numeric(0)))
+    menu <- .menu_of_type(type, period, trend = trend && !type %in% c("ar"))
+  } else {
+    if (!inherits(menu, "depprep_menu")) stop("`menu` must come from basis_menu().", call. = FALSE)
+    if (is.null(type)) type <- "menu"
   }
-  if (type == "none") return(.as_basis(matrix(0, n, 0), type, n, 0, character(0), numeric(0)))
+  family <- if (type %in% spatial_types) "spatial" else if (type %in% temporal_types) "temporal" else if (type %in% st_types) "spatiotemporal" else
+    if (!is.null(coords) && !is.null(index)) "spatiotemporal" else if (!is.null(coords)) "spatial" else if (!is.null(time)) "temporal" else
+      stop("Give `coords`, `time` or `coords` and `index`.", call. = FALSE)
+  margins <- .term_margins(menu, family)
 
   .with_stream(seed, .streams[["basis"]], {
-    if (type %in% spatial_types) {
+    if (family == "spatial") {
       if (is.null(coords)) stop("`coords` is required for spatial groups.", call. = FALSE)
-      sel <- .forward_select(Y, .spatial_candidates(coords, trend = trend), kn_max, alpha, nperm)
-    } else if (type %in% temporal_types) {
+      if (any(margins == "time")) stop("Temporal terms in a menu for spatial data.", call. = FALSE)
+      sel <- .select_alternatives(Y, .margin_candidates(menu, margins, "space", coords, Y), kn_max, alpha, nperm)
+    } else if (family == "temporal") {
       if (is.null(time)) stop("`time` is required for temporal groups.", call. = FALSE)
+      if (any(margins == "space")) stop("Spatial terms in a menu for temporal data.", call. = FALSE)
       ord <- order(time)
-      cand <- .temporal_candidates(time[ord], type, period, trend = trend && type %in% c("trend", "seasonal"))
-      sel <- .forward_select(Y[ord, , drop = FALSE], cand, kn_max, alpha, nperm)
+      sel <- .select_alternatives(Y[ord, , drop = FALSE], .margin_candidates(menu, margins, "time", time[ord], Y[ord, , drop = FALSE]),
+                                  kn_max, alpha, nperm)
       sel$basis[ord, ] <- sel$basis                        # back to the order of the rows
     } else {
       if (is.null(coords) || is.null(index)) stop("`coords` and `index` are required for spatio-temporal groups.", call. = FALSE)
-      sel <- .st_select(Y, coords, index, type, period, kn_max, alpha, nperm, trend)
+      sel <- .st_select(Y, coords, index, menu, margins, kn_max, alpha, nperm)
     }
-    .as_basis(sel$basis, type, n, sel$r2, sel$terms, sel$scalogram)
+    b <- .as_basis(sel$basis, type, n, sel$r2, sel$terms, sel$scalogram)
+    if (!is.null(sel$W)) attr(b, "W") <- sel$W
+    if (user_menu) attr(b, "menu") <- menu
+    b
   })
 }
 
@@ -267,7 +290,7 @@ print.depprep_basis <- function(x, ...) {
 
 # Spatio-temporal basis: marginal selections on the stacked data, then forward
 # selection among their products.
-.st_select <- function(Y, coords, index, type, period, kn_max, alpha, nperm, trend = TRUE) {
+.st_select <- function(Y, coords, index, menu, margins, kn_max, alpha, nperm) {
   sites <- index$site
   times <- match(index$time, sort(unique(index$time)))
   n_s <- nrow(as.matrix(coords))
@@ -279,13 +302,15 @@ print.depprep_basis <- function(x, ...) {
   cube <- lapply(seq_len(ncol(Y)), function(j) { m <- matrix(0, n_s, n_t); m[cbind(sites, times)] <- Y[, j]; m })
   by_site <- do.call(cbind, cube)                          # sites x (times * variables)
   by_time <- do.call(cbind, lapply(cube, t))               # times x (sites * variables)
-  s_terms <- if (type == "temporal_common") NULL else {
-    .forward_select(scale(by_site, scale = FALSE), .spatial_candidates(coords, trend = trend), kn_max, alpha, nperm)$basis
+  # a margin exists when a term other than the trend targets it, or a trend names it
+  has <- function(m) any(margins == m)
+  s_terms <- if (!has("space")) NULL else {
+    Ys <- scale(by_site, scale = FALSE)
+    .select_alternatives(Ys, .margin_candidates(menu, margins, "space", coords, Ys), kn_max, alpha, nperm)$basis
   }
-  t_terms <- if (type == "spatial_only") NULL else {
-    t_type <- if (type == "separable_seasonal") "seasonal" else "ar"
-    .forward_select(scale(by_time, scale = FALSE), .temporal_candidates(sort(unique(index$time)), t_type, period, trend = trend),
-                    kn_max, alpha, nperm)$basis
+  t_terms <- if (!has("time")) NULL else {
+    Yt <- scale(by_time, scale = FALSE)
+    .select_alternatives(Yt, .margin_candidates(menu, margins, "time", sort(unique(index$time)), Yt), kn_max, alpha, nperm)$basis
   }
   S <- cbind(const = rep(1 / sqrt(n_s), n_s), s_terms)
   Tm <- cbind(const = rep(1 / sqrt(n_t), n_t), t_terms)

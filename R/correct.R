@@ -78,6 +78,10 @@
 #' @param kn_max Share of degrees of freedom above which a union of bases is flagged;
 #'   under `scope = "variables"`, the cap of the union of the variables' bases.
 #' @param seed Seed of the basis selection (when `bases` is `NULL`).
+#' @param menu Optional menu of structures for the bases ([basis_menu()]): one menu for
+#'   every group, or a list of menus named by group (groups without one keep the
+#'   automatic choice). Under `scope = "global"` with a list, each group's basis is built
+#'   with its menu and the global basis is their union. Not used by the scale mode.
 #' @return An object of class `depprep_corrected`: a list with `R`, `R_pairwise`
 #'   (before the projection), `adjustment`, `X` (residuals or whitened data; `NULL` in
 #'   scale mode), `R_scale`, `r2_scale`, `p_scale`, `bands` and `scalogram` (scale
@@ -101,7 +105,7 @@
 #' @export
 correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases = NULL,
                     mode = NULL, scope = NULL, data_basis = c("own", "union"), period = NULL,
-                    kn_max = 0.3, seed = 1L) {
+                    kn_max = 0.3, seed = 1L, menu = NULL) {
   if (inherits(X, "depprep_sim")) {
     d <- .data_parts(X); X <- d$X; coords <- d$coords; time <- d$time; index <- d$index
   }
@@ -128,6 +132,14 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   }, "")
   grp0 <- grp
   bases_given <- !is.null(bases)
+  if (!is.null(menu)) {
+    if (mode == "scale") stop("`menu` is not used by the scale mode.", call. = FALSE)
+    if (!inherits(menu, "depprep_menu") && !(is.list(menu) && !is.null(names(menu)) &&
+                                              all(vapply(menu, inherits, TRUE, "depprep_menu")))) {
+      stop("`menu` must be a basis_menu() or a list of them named by group.", call. = FALSE)
+    }
+  }
+  menu_of <- function(g) if (is.null(menu)) NULL else if (inherits(menu, "depprep_menu")) menu else menu[[g]]
   args <- switch(family, spatial = list(coords = coords), temporal = list(time = time),
                  spatiotemporal = list(coords = coords, index = index))
   n <- nrow(X)
@@ -142,15 +154,21 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     types <- unique(vtype[dep])
     if (scope == "global") {
       if (is.null(bases)) {
-        parts <- lapply(types, function(t) do.call(build_group_basis, c(list(X_group = X[, dep, drop = FALSE], type = t,
-          period = .period_of(t, NULL, period, grouping), seed = seed), args)))
+        parts <- if (is.null(menu)) {
+          lapply(types, function(t) do.call(build_group_basis, c(list(X_group = X[, dep, drop = FALSE], type = t,
+            period = .period_of(t, NULL, period, grouping), seed = seed), args)))
+        } else if (inherits(menu, "depprep_menu")) {
+          list(do.call(build_group_basis, c(list(X_group = X[, dep, drop = FALSE], menu = menu, seed = seed), args)))
+        } else lapply(setdiff(unique(grp), "none"), function(g) do.call(build_group_basis, c(list(X_group = X[, grp == g, drop = FALSE],
+          type = gtype[[g]], period = .period_of(gtype[[g]], g, period, grouping), menu = menu_of(g), seed = seed), args)))
         bases <- list(global = suppressWarnings(do.call(union_basis, c(parts, kn_max = kn_max))))
       }
       label <- "global"
     } else {
       variable_bases <- if (is.null(bases)) {
         stats::setNames(lapply(which(dep), function(j) do.call(build_group_basis, c(list(X_group = X[, j, drop = FALSE],
-          type = vtype[j], period = .period_of(vtype[j], grp[j], period, grouping), seed = seed), args))), colnames(X)[dep])
+          type = vtype[j], period = .period_of(vtype[j], grp[j], period, grouping), menu = menu_of(grp[j]), seed = seed), args))),
+          colnames(X)[dep])
       } else {
         if (!all(colnames(X)[dep] %in% names(bases))) {
           stop("With `scope = \"variables\"`, `bases` must name one basis per dependent variable.", call. = FALSE)
@@ -174,7 +192,7 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   if (is.null(bases)) {
     bases <- stats::setNames(lapply(groups, function(g) {
       do.call(build_group_basis, c(list(X_group = X[, grp == g, drop = FALSE], type = gtype[[g]],
-                                        period = .period_of(gtype[[g]], g, period, grouping), seed = seed), args))
+                                        period = .period_of(gtype[[g]], g, period, grouping), menu = menu_of(g), seed = seed), args))
     }), groups)
   }
   if (is.null(parts)) parts <- bases[groups]
@@ -228,7 +246,7 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     if (is.null(variable_bases) && !bases_given) {
       variable_bases <- stats::setNames(lapply(which(grp0 != "none"), function(j) do.call(build_group_basis, c(list(
         X_group = X[, j, drop = FALSE], type = vtype0[j], period = .period_of(vtype0[j], grp0[j], period, grouping),
-        seed = seed + j), args))), colnames(X)[grp0 != "none"])
+        menu = menu_of(grp0[j]), seed = seed + j), args))), colnames(X)[grp0 != "none"])
     }
     own <- function(j) if (grp0[j] == "none") empty else
       if (!is.null(variable_bases)) variable_bases[[colnames(X)[j]]] else basis_of(grp[j])   # bases given: use them

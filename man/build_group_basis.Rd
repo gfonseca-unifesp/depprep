@@ -9,13 +9,14 @@ build_group_basis(
   coords = NULL,
   time = NULL,
   index = NULL,
-  type,
+  type = NULL,
   period = NULL,
   kn_max = 0.25,
   alpha = 0.05,
   nperm = 199,
   seed = 1L,
-  trend = TRUE
+  trend = TRUE,
+  menu = NULL
 )
 }
 \arguments{
@@ -43,13 +44,20 @@ build_group_basis(
 \item{trend}{Put the trend terms (trend surface in space, cubic polynomial of time)
 among the candidates. \code{FALSE} gives the eigenvector maps and harmonics only, as
 used to compare the individual bases of the second grouping level.}
+
+\item{menu}{Optional \code{\link[=basis_menu]{basis_menu()}}: the structures to build the basis from, in place
+of the candidates of \code{type} (which then only sets the data family and may be
+\code{NULL}). Without a menu, the candidates of \code{type} above are the menu
+\code{.menu_of_type()} and give the same basis as before the menus existed.}
 }
 \value{
 A matrix with orthonormal columns (one row per observation) of class
-\code{depprep_basis}, with attributes \code{type}, \code{k}, \code{kn} (k / n), \code{r2} (share of the
-group's variance explained), \code{terms} (names of the selected candidates) and
-\code{scalogram} (share of the group's variance explained by each candidate, selected
-or not, in the order of the candidates; Borcard et al. 2004).
+\code{depprep_basis}, with attributes \code{type} (\code{"menu"} when built from a menu without a
+type), \code{k}, \code{kn} (k / n), \code{r2} (share of the group's variance explained), \code{terms}
+(names of the selected candidates) and \code{scalogram} (share of the group's variance
+explained by each candidate, selected or not, in the order of the candidates;
+Borcard et al. 2004); with a menu, also \code{menu}, and \code{W} (the graph and weights kept)
+with \code{term_mem(W = "auto")}.
 }
 \description{
 Selects one spatial, temporal or spatio-temporal basis for a whole group, treating

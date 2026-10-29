@@ -16,7 +16,8 @@ correct(
   data_basis = c("own", "union"),
   period = NULL,
   kn_max = 0.3,
-  seed = 1L
+  seed = 1L,
+  menu = NULL
 )
 }
 \arguments{
@@ -52,6 +53,11 @@ used; a seasonal group without any period gets 12, with a warning.}
 under \code{scope = "variables"}, the cap of the union of the variables' bases.}
 
 \item{seed}{Seed of the basis selection (when \code{bases} is \code{NULL}).}
+
+\item{menu}{Optional menu of structures for the bases (\code{\link[=basis_menu]{basis_menu()}}): one menu for
+every group, or a list of menus named by group (groups without one keep the
+automatic choice). Under \code{scope = "global"} with a list, each group's basis is built
+with its menu and the global basis is their union. Not used by the scale mode.}
 }
 \value{
 An object of class \code{depprep_corrected}: a list with \code{R}, \code{R_pairwise}
