@@ -187,11 +187,19 @@ print.depprep_menu <- function(x, ...) {
 }
 
 # Asymmetric eigenvector maps on the Delaunay graph oriented by `direction` (degrees).
+# Only the maps with positive autocorrelation on the graph (Moran's I above its
+# expectation) are kept, as for the dbMEM: all n - 1 maps span almost every pattern, and
+# the global test of the selection would have no power.
 .aem_vectors <- function(coords, direction) {
-  b <- adespatial::aem.build.binary(nb.object = spdep::tri2nb(coords), coords = cbind(seq_len(nrow(coords)), coords),
+  nb <- spdep::tri2nb(coords)
+  b <- adespatial::aem.build.binary(nb.object = nb, coords = cbind(seq_len(nrow(coords)), coords),
                                     rot.angle = direction, plot.connexions = FALSE)
   a <- adespatial::aem(aem.build.binary = b)
   m <- a$vectors[, a$values > 1e-8, drop = FALSE]
+  W <- spdep::nb2mat(nb, style = "B")
+  mc <- scale(m, scale = FALSE)
+  moran <- nrow(m) / sum(W) * colSums(mc * (W %*% mc)) / colSums(mc^2)
+  m <- m[, moran > -1 / (nrow(m) - 1), drop = FALSE]
   colnames(m) <- paste0("AEM", seq_len(ncol(m)), "_d", direction)
   m
 }

@@ -51,7 +51,13 @@ test_that("term_mem() chooses the graph and term_aem() gives directional maps", 
   a <- depprep:::.aem_vectors(s$coords, 30)
   expect_equal(nrow(a), 100)
   expect_true(all(grepl("^AEM[0-9]+_d30$", colnames(a))))
+  # only the positively autocorrelated maps are kept, so the global test keeps its power
+  expect_lt(ncol(a), 60)
+  W <- spdep::nb2mat(spdep::tri2nb(s$coords), style = "B")
+  moran <- 100 / sum(W) * colSums(a * (W %*% a)) / colSums(a^2)
+  expect_true(all(moran > -1 / 99))
   ba <- build_group_basis(s$X, coords = s$coords, menu = basis_menu(term_aem(30)), seed = 1, nperm = 99)
+  expect_gt(length(attr(ba, "terms")), 2)
   expect_true(all(grepl("^AEM", attr(ba, "terms"))))
   expect_lte(attr(ba, "kn"), 0.25)
 })
