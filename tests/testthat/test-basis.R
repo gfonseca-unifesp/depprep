@@ -188,3 +188,20 @@ test_that(".forward_select() with batched permutations matches the term-by-term 
   set.seed(7); reference(Y, cand, 0.25, 0.05, 99); b <- stats::runif(1)
   expect_identical(a, b)
 })
+
+test_that("union_basis() drops exact copies of a term and gives the same basis as the full QR", {
+  g <- sim_groups(sim_group("long", 3, "exponential", range = 0.5), sim_group("short", 3, "exponential", range = 0.1))
+  s <- sim_spatial(200, g, seed = 1)
+  b1 <- build_group_basis(s$X[, 1:3], coords = s$coords, type = "isotropic", seed = 1)
+  b2 <- build_group_basis(s$X[, 4:6], coords = s$coords, type = "isotropic", seed = 1)
+  shared <- intersect(attr(b1, "terms"), attr(b2, "terms"))
+  expect_gt(length(shared), 0)
+  # the QR of every column, as before the copies were dropped
+  M <- cbind(unclass(b1), unclass(b2))
+  q <- qr(M, tol = 1e-7)
+  full <- qr.Q(q)[, seq_len(q$rank), drop = FALSE]
+  u <- union_basis(b1, b2)
+  expect_equal(unclass(u)[, ], full, tolerance = 1e-12, ignore_attr = TRUE)
+  expect_identical(attr(u, "terms"), c(attr(b1, "terms"), attr(b2, "terms"))[q$pivot[seq_len(q$rank)]])
+  expect_identical(attr(u, "k"), q$rank)
+})

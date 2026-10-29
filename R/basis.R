@@ -147,8 +147,15 @@ union_basis <- function(..., kn_max = 0.3) {
   M <- do.call(cbind, lapply(bases, unclass))
   terms <- unlist(lapply(bases, function(b) attr(b, "terms")))
   if (!ncol(M)) return(.as_basis(matrix(0, n, 0), "union", n, NA_real_, character(0)))
+  # exact copies of an earlier column (the same term chosen by two groups) would be found
+  # redundant by the QR and moved to the end; dropping them first gives the same Q, faster
+  if (length(terms) == ncol(M)) {
+    dup <- which(duplicated(terms))
+    copy <- vapply(dup, function(j) identical(M[, j], M[, match(terms[j], terms)]), TRUE)
+    if (any(copy)) { M <- M[, -dup[copy], drop = FALSE]; terms <- terms[-dup[copy]] }
+  }
   q <- qr(M, tol = 1e-7)
-  Q <- qr.Q(q)[, seq_len(q$rank), drop = FALSE]
+  Q <- qr.qy(q, diag(1, n, q$rank))                        # only the columns kept (as qr.Q, fewer)
   if (q$rank / n > kn_max) {
     warning(sprintf("The union basis uses k/n = %.2f, above kn_max = %.2f.", q$rank / n, kn_max), call. = FALSE)
   }
