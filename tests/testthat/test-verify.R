@@ -122,6 +122,48 @@ test_that("the Q3 warning fires for contiguous classes and not for the null trut
   expect_gt(v1$q3$statistic, v0$q3$statistic)
 })
 
+test_that("spectral surrogates keep each variable's spectrum and break the association", {
+  set.seed(2)
+  coords <- cbind(runif(120), runif(120))
+  f <- sin(3 * coords[, 1]) + cos(4 * coords[, 2])
+  X <- cbind(a = f + rnorm(120, sd = 0.3), b = f + rnorm(120, sd = 0.3))
+  sb <- depprep:::.surrogate_bases("spatial", coords = coords)
+  s <- depprep:::.with_stream(1, 11L, depprep:::.spectral_surrogate(X, sb))
+  Xc <- scale(X, scale = FALSE)
+  expect_equal(crossprod(sb$U, s)^2, crossprod(sb$U, Xc)^2, tolerance = 1e-8)   # same power at every scale
+  expect_equal(colSums(s^2), colSums(Xc^2), tolerance = 1e-8)
+  r <- depprep:::.with_stream(1, 11L, vapply(1:200, function(b) stats::cor(depprep:::.spectral_surrogate(X, sb))[1, 2], 0))
+  expect_gt(stats::cor(X)[1, 2], 0.8)
+  expect_lt(abs(mean(r)), 0.1)                                                 # association broken on average
+  # temporal: the lag-1 autocorrelation is kept on average
+  x <- as.numeric(stats::arima.sim(list(ar = 0.8), 200))
+  sbt <- depprep:::.surrogate_bases("temporal", time = 1:200)
+  a1 <- function(z) stats::acf(z, lag.max = 1, plot = FALSE)$acf[2]
+  st <- depprep:::.with_stream(1, 11L, vapply(1:50, function(b) a1(depprep:::.spectral_surrogate(cbind(x), sbt)), 0))
+  expect_lt(abs(mean(st) - a1(x)), 0.1)
+  # space-time: the product basis is complete; an incomplete grid stops
+  idx <- data.frame(site = rep(1:6, times = 5), time = rep(1:5, each = 6))
+  sbs <- depprep:::.surrogate_bases("spatiotemporal", coords = coords[1:6, ], index = idx)
+  z <- cbind(rnorm(30))
+  zs <- depprep:::.with_stream(1, 11L, depprep:::.spectral_surrogate(z, sbs))
+  expect_equal(sum(zs^2), sum(scale(z, scale = FALSE)^2), tolerance = 1e-8)
+  expect_error(depprep:::.surrogate_bases("spatiotemporal", coords = coords[1:6, ], index = idx[-1, ]), "complete grid")
+})
+
+test_that("the Q3 reference matches the statistic for independent white noise and is reproducible", {
+  set.seed(3)
+  n <- 150
+  X <- matrix(rnorm(n * 8), n)
+  U <- qr.Q(qr(scale(matrix(rnorm(n * 15), n), scale = FALSE)))
+  sb <- depprep:::.surrogate_bases("temporal", time = seq_len(n))
+  obs <- depprep:::.large_association(crossprod(U %*% crossprod(U, scale(X, scale = FALSE))) / (n - 1),
+                                      crossprod(scale(X, scale = FALSE) - U %*% crossprod(U, scale(X, scale = FALSE))) / (n - 1))[["mean"]]
+  ref <- depprep:::.q3_reference(X, U, sb, B = 49, seed = 5)
+  expect_length(ref$values, 49)
+  expect_lt(abs(obs / ref$mean - 1), 0.3)
+  expect_identical(ref$values, depprep:::.q3_reference(X, U, sb, B = 49, seed = 5)$values)
+})
+
 test_that("the default Q3 threshold depends on the data family and an explicit one overrides it", {
   g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("none", 2, "none"))
   s <- sim_spatial(150, g, seed = 3)

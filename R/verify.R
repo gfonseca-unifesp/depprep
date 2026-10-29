@@ -325,6 +325,61 @@ print.depprep_verification <- function(x, ...) {
   c(mean = mean(aL), share = sum(aL) / sum(aL + aE))
 }
 
+# Complete orthonormal bases for the spectral surrogates of one family: the dbMEM of the
+# positions completed with the null directions (.complete_basis(), as in codependence()),
+# for the sites and the times separately in space-time (a complete grid of sites x times).
+.surrogate_bases <- function(family, coords = NULL, time = NULL, index = NULL) {
+  switch(family,
+    spatial = list(family = family, U = .complete_basis(as.matrix(coords))),
+    temporal = list(family = family, U = .complete_basis(matrix(as.numeric(time)))),
+    spatiotemporal = {
+      site <- as.integer(index$site); tt <- match(index$time, sort(unique(index$time)))
+      S <- max(site); T <- max(tt)
+      if (length(site) != S * T || anyDuplicated(cbind(site, tt))) {
+        stop("Spectral surrogates in space-time need a complete grid of sites x times.", call. = FALSE)
+      }
+      list(family = family, Us = cbind(1 / sqrt(S), .complete_basis(as.matrix(coords))),
+           Ut = cbind(1 / sqrt(T), .complete_basis(matrix(as.numeric(sort(unique(index$time)))))), site = site, time = tt)
+    })
+}
+
+# One spectral surrogate of every column of X (Moran spectral randomisation, Wagner and
+# Dray 2015): the coefficients of each centred column on the complete basis get random
+# signs, independently between columns. This keeps the squared coefficients, so the
+# Moran's I (and the autocorrelation at every scale) of each variable, and destroys the
+# association between variables. In space-time the basis is the product of the site and
+# time bases, applied to the sites x times matrix. Uses the caller's random stream.
+.spectral_surrogate <- function(X, sb) {
+  Xc <- scale(as.matrix(X), scale = FALSE)
+  if (sb$family != "spatiotemporal") {
+    C <- crossprod(sb$U, Xc)
+    return(sb$U %*% (C * matrix(sample(c(-1, 1), length(C), replace = TRUE), nrow(C))))
+  }
+  S <- nrow(sb$Us); T <- nrow(sb$Ut)
+  out <- matrix(0, nrow(Xc), ncol(Xc))
+  for (j in seq_len(ncol(Xc))) {
+    Y <- matrix(0, S, T); Y[cbind(sb$site, sb$time)] <- Xc[, j]
+    C <- crossprod(sb$Us, Y %*% sb$Ut)
+    sg <- matrix(sample(c(-1, 1), length(C), replace = TRUE), S); sg[1, 1] <- 1
+    out[, j] <- (sb$Us %*% (C * sg) %*% t(sb$Ut))[cbind(sb$site, sb$time)]
+  }
+  out
+}
+
+# Reference of the Q3 statistic under independence between variables, with the
+# autocorrelation of each variable kept: the statistic recomputed on the same projector U
+# for B sets of spectral surrogates. Returns the B values, their mean and sd.
+.q3_reference <- function(X, U, sb, B = 99, seed = 1L) {
+  stat <- function(M) {
+    Mc <- scale(M, scale = FALSE)
+    L <- if (ncol(U)) U %*% crossprod(U, Mc) else Mc * 0
+    n <- nrow(Mc)
+    .large_association(crossprod(L) / (n - 1), crossprod(Mc - L) / (n - 1))[["mean"]]
+  }
+  values <- .with_stream(seed, .streams[["surrogate"]], vapply(seq_len(B), function(b) stat(.spectral_surrogate(X, sb)), 0))
+  list(values = values, mean = mean(values), sd = stats::sd(values))
+}
+
 # Seasonal period known to the verification: the argument, the one recorded in the
 # corrected object, or the largest period of the seasonal terms of its bases.
 .known_period <- function(period, corrected) {
