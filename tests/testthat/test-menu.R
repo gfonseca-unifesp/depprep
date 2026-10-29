@@ -6,7 +6,9 @@ test_that("menus are built from terms and checked", {
   expect_error(basis_menu(), "one or more terms")
   expect_error(basis_menu(list(kind = "x")), "one or more terms")
   expect_error(term_mem(W = "voronoi"), "Unknown `W`")
-  expect_error(term_cycle(period = 1), "above 2")
+  expect_error(term_cycle(period = 1), "at least 2")
+  # a period of 2 (the alternation of a unit-step series) is accepted, as before the menu
+  expect_silent(term_cycle(period = 2))
   expect_error(term_aem("north"), "angle")
   expect_identical(depprep:::.term_margins(m, "spatiotemporal"), c("both", "time", "time"))
   expect_identical(depprep:::.term_margins(basis_menu(term_mem()), "temporal"), "time")
@@ -65,4 +67,13 @@ test_that("correct() takes one menu or a menu per group", {
   expect_true(all(attr(cr2$bases$global, "terms") %in% c("trend_x", "trend_y")))
   expect_error(correct(s, grp, menu = list(m)), "named by group")
   expect_error(correct(s, grp, menu = m, mode = "scale"), "scale mode")
+})
+
+test_that("a seasonal basis with a diagnosed period of 2 is built as before the menu", {
+  set.seed(3)
+  tt <- 1:93
+  x <- matrix(cos(pi * tt) + stats::rnorm(93, sd = 0.5), ncol = 1)
+  b <- build_group_basis(x, time = tt, type = "seasonal", period = 2, seed = 1)
+  expect_s3_class(b, "depprep_basis")
+  expect_true(all(grepl("_p2$|^trend", colnames(unclass(b)))))
 })

@@ -70,7 +70,7 @@ term_trend <- function(degree = NULL, margin = NULL) .term("trend", margin, degr
 #' @rdname basis_menu
 #' @export
 term_cycle <- function(period = NULL, harmonics = NULL) {
-  if (!is.null(period) && (!is.numeric(period) || length(period) != 1 || period <= 2)) stop("`period` must be one number above 2.", call. = FALSE)
+  if (!is.null(period) && (!is.numeric(period) || length(period) != 1 || period < 2)) stop("`period` must be one number of at least 2.", call. = FALSE)
   .term("cycle", "time", period = period, harmonics = harmonics)
 }
 
