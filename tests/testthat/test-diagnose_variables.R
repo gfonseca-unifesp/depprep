@@ -3,6 +3,7 @@ g_sp <- function() sim_groups(sim_group("long", 2, "exponential", range = 0.5),
                               sim_group("none", 2, "none"))
 
 test_that("diagnose_variables returns one signature row per variable", {
+  skip_on_cran()
   s <- sim_spatial(400, g_sp(), seed = 1)
   d <- diagnose_variables(s)
   expect_s3_class(d, "depprep_signature")
@@ -15,6 +16,7 @@ test_that("diagnose_variables returns one signature row per variable", {
 })
 
 test_that("a variable's signature does not depend on the other variables", {
+  skip_on_cran()
   s <- sim_spatial(200, g_sp(), seed = 2)
   d1 <- diagnose_variables(s$X, coords = s$coords)
   x2 <- s$X

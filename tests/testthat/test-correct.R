@@ -197,6 +197,7 @@ test_that("the period argument sets the seasonal period; a missing period warns"
 })
 
 test_that("defaults follow decision D7: global basis in space and time, whitening in space-time", {
+  skip_on_cran()
   g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("b", 3, "matern", range = 0.15),
                   sim_group("none", 2, "none"))
   s <- sim_spatial(300, g, seed = 7)

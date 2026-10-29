@@ -104,6 +104,7 @@ test_that("the projected and residual parts rebuild the covariance", {
 })
 
 test_that("the Q3 warning fires for contiguous classes and not for the null truth", {
+  skip_on_cran()
   g <- sim_groups(sim_group("long", 5, "exponential", range = 0.5), sim_group("short", 5, "exponential", range = 0.15),
                   sim_group("aniso", 5, "exponential", range = 0.25, anisotropy = 4, angle = 30),
                   sim_group("none", 5, "none"))

@@ -37,6 +37,7 @@ test_that("regimes changed by hand and menus built in the app", {
 })
 
 test_that("the R code of the app parses and reproduces the correction", {
+  skip_on_cran()
   code <- depprep:::.app_code("data.csv", "spatial", "x", "y", NULL, NULL, c("long_1", "long_2", "none_1"),
                               list(list(variables = "none_1", type = "none", period = NULL)),
                               list(g1 = basis_menu(term_trend())), "conditional", "groups")

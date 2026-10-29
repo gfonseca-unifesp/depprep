@@ -4,6 +4,7 @@ tm_series <- function(regime, seed, n_times = 480, share = 1, ...) {
 }
 
 test_that(".temporal_stats recovers phi (mean of 30 replicates within 0.05)", {
+  skip_on_cran()
   for (phi in c(0.3, 0.9)) {
     est <- vapply(1:30, function(i) depprep:::.temporal_stats(tm_series("ar1", 600 + i, phi = phi))[["phi"]], 0)
     expect_lt(abs(mean(est) - phi), 0.05)

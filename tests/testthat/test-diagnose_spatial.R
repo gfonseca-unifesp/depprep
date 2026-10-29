@@ -80,6 +80,7 @@ test_that("a linear gradient is measured and removed before the variogram", {
 })
 
 test_that("the Moran correlogram keeps the combined test near the nominal level", {
+  skip_on_cran()
   g0 <- sim_groups(sim_group("none", 10, "none"))
   d <- do.call(rbind, lapply(1:6, function(i) diagnose_variables(sim_spatial(100, g0, seed = 200 + i), nsim = 199, perm_seed = i)))
   expect_lt(mean(d$dependence_p < 0.05), 0.12)

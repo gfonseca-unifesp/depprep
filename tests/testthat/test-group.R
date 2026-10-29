@@ -6,6 +6,7 @@ spatial_case <- function(seed = 21) {
 }
 
 test_that("grouping recovers the true groups and keeps the none group apart", {
+  skip_on_cran()
   s <- spatial_case()
   sig <- diagnose_variables(s)
   gr <- group_regimes(sig, method = "hclust")
@@ -22,6 +23,7 @@ test_that("grouping recovers the true groups and keeps the none group apart", {
 })
 
 test_that("grouping uses only the signatures, not the order or correlations of the variables", {
+  skip_on_cran()
   s <- spatial_case()
   sig <- diagnose_variables(s)
   gr <- group_regimes(sig)
@@ -33,6 +35,7 @@ test_that("grouping uses only the signatures, not the order or correlations of t
 })
 
 test_that("stability: co-association is a symmetric share and defines the stability", {
+  skip_on_cran()
   s <- spatial_case(22)
   sig <- diagnose_variables(s, nsim = 99)
   # hclust: in spatial data mclust splits more and its stability is lower (stage 4)
@@ -84,6 +87,7 @@ test_that("basis_distance is 0 for the same subspace and 1 for orthogonal ones",
 })
 
 test_that("the subspace level separates variables of the same regime with independent fields", {
+  skip_on_cran()
   g <- sim_groups(sim_group("a1", 4, "matern", range = 0.5), sim_group("a2", 4, "matern", range = 0.5),
                   sim_group("none", 3, "none"))
   s <- sim_spatial(400, g, seed = 1)
