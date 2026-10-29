@@ -1,6 +1,6 @@
 #' Run the depprep app
 #'
-#' Opens a point-and-click interface to the whole workflow, in six steps (decision D20):
+#' Opens a point-and-click interface to the whole workflow, in six steps:
 #' 1. load a CSV file and mark the position columns (coordinates, time, site);
 #' 2. say which technique the corrected data are for and whether the classes sought
 #'    could be regions or periods;
@@ -156,7 +156,7 @@ run_app <- function(launch.browser = interactive()) {
   shiny::fluidPage(
     shiny::tags$head(shiny::tags$style(shiny::HTML(paste(
       "body{max-width:1200px;margin:auto}.note{background:#fff4e5;border-left:4px solid #f39c12;padding:.5rem;margin:.5rem 0}",
-      ".ok{background:#eef7ee;border-left:4px solid #2e8b57;padding:.5rem;margin:.5rem 0}.help{color:#555;font-size:.9rem}")))),
+      ".ok{background:#eef7ee;border-left:4px solid #2e8b57;padding:.5rem;margin:.5rem 0}.help{color:#555;font-size:.95em}")))),
     shiny::titlePanel("depprep: dependence-aware preprocessing"),
     shiny::navlistPanel(id = "step", widths = c(2, 10),
       shiny::tabPanel("1. Data",
@@ -180,7 +180,7 @@ run_app <- function(launch.browser = interactive()) {
         shiny::fluidRow(shiny::column(4, shiny::uiOutput("plot_var")), shiny::column(8, shiny::plotOutput("diag_plot", height = 300))),
         shiny::h4("Change a regime by hand"),
         shiny::uiOutput("override_ui"),
-        shiny::h4("Menu of structures for a group (decision D16)"),
+        shiny::h4("Menu of structures for a group"),
         shiny::p(class = "help", "Restrict the structures a group's basis is built from; the parameters are still searched with the usual limits (tests, k/n cap). Empty: the automatic choice."),
         shiny::uiOutput("menu_ui"),
         shiny::verbatimTextOutput("menus")),
@@ -247,8 +247,8 @@ run_app <- function(launch.browser = interactive()) {
   })
   output$head <- shiny::renderTable(utils::head(rv$df, 6))
   output$context_msg <- shiny::renderUI({
-    out <- list(shiny::p(if (input$technique == "pca") "PCA reads the corrected correlation matrix R, built with the shared basis of each group (decision D7)." else
-      "These techniques read the corrected data matrix X, in which each variable is corrected with its own basis (decision D17): it keeps the classes best."))
+    out <- list(shiny::p(if (input$technique == "pca") "PCA reads the corrected correlation matrix R, built with the shared basis of each group." else
+      "These techniques read the corrected data matrix X, in which each variable is corrected with its own basis: it keeps the classes best."))
     if (input$regions != "no") out <- c(out, list(shiny::div(class = "note",
       "Classes that are regions or periods live at the scale of the basis, and the correction removes them together with the dependence. Step 5 warns when much of the association is at that scale (Q3); in that case use the raw data, or the scale mode of correct(), for those classes.")))
     shiny::tagList(out)
@@ -335,7 +335,7 @@ run_app <- function(launch.browser = interactive()) {
     list(mode = mode, scope = scope)
   })
   output$correct_help <- shiny::renderUI(shiny::p(class = "help",
-    "Default: in space and in time, R from one global basis of the dependent variables, conditional mode (D7); in space-time, whitening by group. The data matrix X always has each variable corrected with its own basis (D17), which keeps the classes. With a menu, the bases are built per group."))
+    "Default: in space and in time, R from one global basis of the dependent variables, conditional mode; in space-time, whitening by group. The data matrix X always has each variable corrected with its own basis, which keeps the classes. With a menu, the bases are built per group."))
   shiny::observeEvent(input$correct, {
     shiny::req(rv$grouping)
     d <- dat(); st <- settings()

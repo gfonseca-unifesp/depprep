@@ -13,7 +13,7 @@ run_app(launch.browser = interactive())
 Runs the app; returns nothing useful.
 }
 \description{
-Opens a point-and-click interface to the whole workflow, in six steps (decision D20):
+Opens a point-and-click interface to the whole workflow, in six steps:
 \enumerate{
 \item load a CSV file and mark the position columns (coordinates, time, site);
 \item say which technique the corrected data are for and whether the classes sought
