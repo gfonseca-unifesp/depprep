@@ -122,6 +122,31 @@ test_that("the Q3 warning fires for contiguous classes and not for the null trut
   expect_gt(v1$q3$statistic, v0$q3$statistic)
 })
 
+test_that("the LISA finds a region left by the correction and nothing in white noise", {
+  set.seed(7)
+  xy <- cbind(runif(200), runif(200))
+  patch <- as.numeric((xy[, 1] - 0.8)^2 + (xy[, 2] - 0.8)^2 < 0.02)
+  Z <- cbind(noise = rnorm(200), patch = 3 * patch + rnorm(200, sd = 0.5))
+  l <- depprep:::.lisa(Z, xy)
+  expect_equal(nrow(l), 400)
+  expect_lt(mean(l$cluster[l$variable == "noise"] != "none"), 0.03)
+  hh <- l$variable == "patch" & l$cluster == "high_high"
+  expect_gt(mean(patch[l$site[hh]]), 0.8)                       # the high-high sites are in the patch
+  expect_gt(sum(hh), 5)
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("none", 2, "none"))
+  s <- sim_spatial(150, g, seed = 3)
+  grp <- stats::setNames(c("g1", "g1", "g1", "none", "none"), colnames(s$X))
+  v <- verify(correct(s, grp, seed = 1), s, nperm = 0)
+  expect_true(all(c("local_I", "p_adjusted", "cluster") %in% names(v$lisa)))
+  expect_true(all(v$variables$lisa_share >= 0 & v$variables$lisa_share <= 1))
+  expect_output(print(v), "LISA")
+  gt <- sim_groups(sim_group("a", 2, "ar1", phi = 0.8))
+  st <- sim_temporal(100, gt, seed = 1)
+  grt <- data.frame(variable = colnames(st$X), group = "g1", group_type = "ar")
+  class(grt) <- c("depprep_grouping", "data.frame"); attr(grt, "period") <- c(g1 = NA)
+  expect_null(verify(correct(st, grt), st, nperm = 0)$lisa)
+})
+
 test_that("spectral surrogates keep each variable's spectrum and break the association", {
   set.seed(2)
   coords <- cbind(runif(120), runif(120))

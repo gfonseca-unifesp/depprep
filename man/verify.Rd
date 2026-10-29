@@ -46,6 +46,10 @@ A list of class \code{depprep_verification} with
 \code{lb_lag} and \code{lb_p} in time, and \code{residual_structure});
 \item \code{correlograms} (data frame, one row per variable and distance class: \code{class},
 \code{distance}, \code{pairs}, \code{moran_I}, \code{expected}, \code{p}, \code{p_progressive}; \code{NULL} in time);
+\item \code{lisa} (data frame, one row per variable and site: \code{local_I}, \code{z}, \code{p},
+\code{p_adjusted} and \code{cluster}, the quadrant \code{high_high}, \code{low_low}, \code{high_low} or
+\code{low_high} of the sites with local structure, \code{none} otherwise; \code{NULL} in time),
+and \code{lisa_share} in \code{variables}, the share of sites with local structure;
 \item \code{mantel} (data frame, one row per distance class: \code{class}, \code{distance}, \code{pairs},
 \code{mantel_r}, \code{p}, \code{p_progressive}; \code{NULL} when \code{nperm = 0}) and \code{mantel_p} (its
 Bonferroni global test);
@@ -93,6 +97,14 @@ mean) removed: the exact moments of Moran's I for residuals (Cliff and Ord, as i
 tests, \code{nperm} permutations of the rows projected off the basis again (Freedman and
 Lane). In the whiten mode only the mean is removed, so these are the usual tests.
 
+\strong{Local structure} (space and space-time, descriptive): the local Moran's I of each
+corrected variable (Anselin 1995; on the site means in space-time), with the 8 nearest
+neighbours, two-sided p-values adjusted by the false discovery rate within each
+variable. It shows where structure is left, for instance a region that behaves
+differently from the rest (a plume against the open shelf), which a global basis does
+not describe. It describes and does not correct; the p-values are approximate, since
+residuals on a basis are not exchangeable.
+
 \strong{What was removed} (the logic of variation partitioning). In the conditional
 mode each variable splits into a projected (large-scale) part \verb{P x} and a residual
 part \verb{(I - P) x}, and so does the covariance of every pair, exactly:
@@ -139,6 +151,9 @@ v$variables[, c("variable", "large_share", "correlogram_p", "extent")]
 v$q3    # fires: one large-scale field is shared by 4 of the 6 variables (see Details)
 }
 \references{
+Anselin, L. (1995). Local indicators of spatial association - LISA.
+Geographical Analysis 27, 93-115.
+
 Legendre, P. and Legendre, L. (2012). \emph{Numerical Ecology}, 3rd ed.
 Elsevier. Sections 12.3, 13.1.1, 13.1.6 and 13.5.
 }

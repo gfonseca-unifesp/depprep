@@ -33,6 +33,14 @@
 #' tests, `nperm` permutations of the rows projected off the basis again (Freedman and
 #' Lane). In the whiten mode only the mean is removed, so these are the usual tests.
 #'
+#' **Local structure** (space and space-time, descriptive): the local Moran's I of each
+#' corrected variable (Anselin 1995; on the site means in space-time), with the 8 nearest
+#' neighbours, two-sided p-values adjusted by the false discovery rate within each
+#' variable. It shows where structure is left, for instance a region that behaves
+#' differently from the rest (a plume against the open shelf), which a global basis does
+#' not describe. It describes and does not correct; the p-values are approximate, since
+#' residuals on a basis are not exchangeable.
+#'
 #' **What was removed** (the logic of variation partitioning). In the conditional
 #' mode each variable splits into a projected (large-scale) part `P x` and a residual
 #' part `(I - P) x`, and so does the covariance of every pair, exactly:
@@ -88,6 +96,10 @@
 #'     `lb_lag` and `lb_p` in time, and `residual_structure`);
 #'   * `correlograms` (data frame, one row per variable and distance class: `class`,
 #'     `distance`, `pairs`, `moran_I`, `expected`, `p`, `p_progressive`; `NULL` in time);
+#'   * `lisa` (data frame, one row per variable and site: `local_I`, `z`, `p`,
+#'     `p_adjusted` and `cluster`, the quadrant `high_high`, `low_low`, `high_low` or
+#'     `low_high` of the sites with local structure, `none` otherwise; `NULL` in time),
+#'     and `lisa_share` in `variables`, the share of sites with local structure;
 #'   * `mantel` (data frame, one row per distance class: `class`, `distance`, `pairs`,
 #'     `mantel_r`, `p`, `p_progressive`; `NULL` when `nperm = 0`) and `mantel_p` (its
 #'     Bonferroni global test);
@@ -96,7 +108,10 @@
 #'   * `q3` (list: `statistic`, `share`, `threshold`, `warning`);
 #'   * `delta_R` (corrected R minus raw R), `delta_summary` (by kind of pair), `kn`,
 #'     `union_kn`, `warnings` (those of [correct()] plus the Q3 warning) and `notes`.
-#' @references Legendre, P. and Legendre, L. (2012). *Numerical Ecology*, 3rd ed.
+#' @references Anselin, L. (1995). Local indicators of spatial association - LISA.
+#'   Geographical Analysis 27, 93-115.
+#'
+#'   Legendre, P. and Legendre, L. (2012). *Numerical Ecology*, 3rd ed.
 #'   Elsevier. Sections 12.3, 13.1.1, 13.1.6 and 13.5.
 #' @examples
 #' g <- sim_groups(sim_group("long", 4, "matern", range = 0.5), sim_group("none", 2, "none"))
@@ -190,6 +205,12 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
     }, 0L, USE.NAMES = FALSE)
     vars$residual_structure <- !is.na(vars$correlogram_p) & vars$correlogram_p <= alpha
   }
+  # local structure (descriptive): local Moran's I of each corrected variable
+  lisa <- NULL
+  if (family != "temporal") {
+    lisa <- .lisa(Z, coords, alpha)
+    vars$lisa_share <- vapply(colnames(X), function(v) mean(lisa$cluster[lisa$variable == v] != "none"), 0, USE.NAMES = FALSE)
+  }
   mantel <- .mantel_correlogram(Z, position, Fq_all, nperm, seed)
   mantel_p <- if (is.null(mantel)) NA_real_ else min(1, min(mantel$p, na.rm = TRUE) * sum(!is.na(mantel$p)))
 
@@ -214,7 +235,7 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
                                   "correlation of %.2f between variables (threshold %.2f); classes that are regions or",
                                   "periods would be removed by the correction"), q3_stat[["mean"]], q3_threshold))
   }
-  structure(list(variables = vars, correlograms = correlograms, mantel = mantel, mantel_p = mantel_p,
+  structure(list(variables = vars, correlograms = correlograms, lisa = lisa, mantel = mantel, mantel_p = mantel_p,
                  R_large = parts$R_large, cov_large = parts$cov_large, cov_residual = parts$cov_residual,
                  large_share = parts$large_share, large_share_pairwise = parts$large_share_pairwise,
                  q3 = list(statistic = q3_stat[["mean"]], share = q3_stat[["share"]], threshold = q3_threshold,
@@ -234,6 +255,10 @@ print.depprep_verification <- function(x, ...) {
   cat(sprintf("Variables with residual structure: %d of %d; Mantel correlogram p = %s\n",
               sum(x$variables$residual_structure), nrow(x$variables),
               if (is.na(x$mantel_p)) "not computed" else format.pval(x$mantel_p, digits = 2)))
+  if (!is.null(x$lisa)) {
+    cat(sprintf("Sites with local structure left (LISA, FDR): median %.0f%% per variable, largest %.0f%%\n",
+                100 * stats::median(x$variables$lisa_share), 100 * max(x$variables$lisa_share)))
+  }
   if (is.finite(x$q3$statistic)) {
     cat(sprintf("Mean absolute correlation carried by the projected part: %.2f (Q3 threshold %.2f; %.0f%% of the association)\n",
                 x$q3$statistic, x$q3$threshold, 100 * x$q3$share))
@@ -246,6 +271,31 @@ print.depprep_verification <- function(x, ...) {
 # Default thresholds of the Q3 warning by data family (amendment protocol-v1.2,
 # analysis/07d_q3_recalibration.R).
 .q3_thresholds <- c(spatial = 0.16, temporal = 0.19, spatiotemporal = 0.13)
+
+# Local Moran's I (Anselin 1995) of every column of Z at the sites `coords`, with the
+# symmetric 8-nearest-neighbour weights, two-sided normal p-values adjusted by the false
+# discovery rate within each variable, and the quadrant (high-high, low-low, high-low,
+# low-high) of the significant sites. Residuals on a basis are not exchangeable, so the
+# p-values are approximate: the result describes where structure is left (for instance
+# a region that behaves differently), it is not a test of the correction.
+.lisa <- function(Z, coords, alpha = 0.05) {
+  Z <- as.matrix(Z)
+  lw <- .knn_weights(coords)
+  do.call(rbind, lapply(seq_len(ncol(Z)), function(j) {
+    z <- Z[, j]
+    if (stats::sd(z) < 1e-12) {
+      return(data.frame(variable = colnames(Z)[j], site = seq_along(z), local_I = 0, z = 0, p = 1, p_adjusted = 1,
+                        cluster = "none", stringsAsFactors = FALSE))
+    }
+    lm <- spdep::localmoran(z, lw, alternative = "two.sided")
+    p <- lm[, 5]
+    q <- as.character(attr(lm, "quadr")$mean)
+    padj <- stats::p.adjust(p, "fdr")
+    data.frame(variable = colnames(Z)[j], site = seq_along(z), local_I = unname(lm[, 1]), z = unname(lm[, 4]), p = unname(p),
+               p_adjusted = unname(padj), cluster = ifelse(padj <= alpha, tolower(gsub("-", "_", q)), "none"),
+               stringsAsFactors = FALSE)
+  }))
+}
 
 # Basis each column of the data matrix was corrected with when data_basis = "own": the
 # variable's own selection, or its group's basis when the bases were given; empty for the
