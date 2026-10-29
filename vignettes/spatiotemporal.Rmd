@@ -1,0 +1,73 @@
+---
+title: "Space-time data: maps that change in time"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Space-time data: maps that change in time}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 4)
+library(depprep)
+```
+
+Satellite images, monitoring stations or repeated surveys give every variable at every
+site and time. The large-scale structure can then be a common time series, a map with a
+seasonal amplitude, or a pattern that moves (a plume, a front). `depprep` needs a
+complete grid: every site at every time.
+
+## Data with known truth
+
+```{r simulate}
+g <- sim_groups(sim_group("common", 3, "temporal_common", phi = 0.9),
+                sim_group("seasonal_map", 3, "separable_seasonal", range = 0.25, period = 12),
+                sim_group("moving", 3, "moving", range = 0.25, velocity = c(0.02, 0)),
+                sim_group("none", 2, "none"))
+sim <- sim_spatiotemporal(50, 60, g, seed = 3)
+dim(sim$X)               # 50 sites x 60 times, 11 variables
+head(sim$index)
+```
+
+With your own data, give the site coordinates (`coords`, one row per site) and an
+`index` with the `site` (row of `coords`) and `time` of every observation.
+
+## Diagnose, group, correct
+
+```{r workflow}
+sig <- diagnose_variables(sim, nsim = 99)
+gr <- group_regimes(sig)
+gr[, c("variable", "type", "group")]
+cr <- correct(sim, gr)
+cr$mode
+```
+
+On a grid this small the diagnosis can read the seasonal maps and the moving pattern as
+a common series (each regime needs enough sites and times to be told apart); check the
+table, and change a regime by hand in `run_app()` when you know better.
+
+In space-time the default for the correlation matrix is whitening group by group: the
+common processes persist in time and the residuals do not, so filtering by the temporal
+model separates them better than a basis. The data matrix keeps one basis per variable.
+
+## Verify
+
+```{r verify}
+v <- verify(cr, sim, nperm = 0)
+v$delta_summary
+```
+
+The spatial tests and the local Moran's I are computed on the site means of the
+corrected variables.
+
+## A moving pattern
+
+For a pattern that moves in a known direction (here along x), directional maps can be
+offered to the group's spatial margin, together with the temporal maps:
+
+```{r menu}
+m <- basis_menu(term_trend(), term_aem(direction = 0), term_mem(margin = "time"))
+b <- build_group_basis(sim$X[, sim$group == "moving"], coords = sim$coords, index = sim$index, menu = m)
+attr(b, "k")
+head(attr(b, "terms"))
+```

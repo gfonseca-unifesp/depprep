@@ -35,3 +35,6 @@ depprep.Rcheck/
 
 # private Portuguese notes and progress report (separate private repository)
 interno/
+/doc/
+/Meta/
+inst/doc

@@ -1,0 +1,81 @@
+---
+title: "Time series: cycles, trends and persistence"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Time series: cycles, trends and persistence}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 4)
+library(depprep)
+```
+
+Two monthly series that both have an annual cycle are correlated even when nothing
+links them. `depprep` removes the shared slow structure (cycles, trends, persistence)
+before the variables are compared.
+
+## Data with known truth
+
+Eight years of monthly data, twelve variables: four persistent (AR(1)), four with an
+annual cycle, two with a trend that shifts in the middle, two without dependence.
+
+```{r simulate}
+g <- sim_groups(sim_group("persistent", 4, "ar1", phi = 0.9),
+                sim_group("seasonal", 4, "seasonal", period = 12),
+                sim_group("trend", 2, "trend_shift"),
+                sim_group("none", 2, "none"))
+sim <- sim_temporal(96, g, R_true = make_R_true(g, "blocks", within = 0.5, between = 0), seed = 2)
+```
+
+With your own data, give the times (`time`, numbers in a regular series) to every
+function.
+
+## Diagnose and group
+
+```{r diagnose}
+sig <- diagnose_variables(sim, nsim = 99)
+sig[, c("variable", "ljung_p", "phi", "period", "trend_r2")]
+gr <- group_regimes(sig)
+gr[, c("variable", "type", "group")]
+```
+
+The seasonal period found by the periodogram is recorded in the grouping and used by the
+correction.
+
+## Correct and verify
+
+```{r correct}
+cr <- correct(sim, gr)
+v <- verify(cr, sim, nperm = 49)
+v$variables[, c("variable", "removed", "autocor_before", "autocor_after", "residual_structure")]
+```
+
+In time, `verify()` tests the residuals of each variable with a Ljung-Box test whose null
+is white noise with the same basis removed (residuals on a basis are not exchangeable).
+
+## When you know the cycle
+
+If the period is known (12 months), say so for the seasonal groups; the harmonics are
+then searched for that period only, and the other groups keep the automatic choice:
+
+```{r menu}
+seasonal <- unique(gr$group[gr$type == "seasonal"])
+menus <- setNames(rep(list(basis_menu(term_trend(), term_cycle(period = 12))), length(seasonal)), seasonal)
+cr_m <- correct(sim, gr, menu = menus, scope = "groups")
+lapply(cr_m$bases[seasonal], attr, "terms")
+```
+
+Without `period`, `term_cycle()` takes the period from the periodogram of the group's
+variables.
+
+## Whitening
+
+An alternative to removing slow patterns is to filter each group by its autoregressive
+model (`mode = "whiten"`); the correlations then are those of the innovations, a
+different quantity.
+
+```{r whiten}
+round(correct(sim, gr, mode = "whiten")$R[1:4, 5:8], 2)
+```

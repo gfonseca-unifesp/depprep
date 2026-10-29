@@ -2,10 +2,11 @@
 
 **Dependence-aware preprocessing for multivariate exploratory analysis.**
 
-> **Status:** early development — stages 0 to 5 are complete (simulation generators, the
-> diagnosis of each variable, grouping and shared bases, the correction); the stage 6
-> pilot with PCA, MDS, k-means and SOM has run and is under review. Do not use the
-> package on real data yet.
+> **Status:** stages 0 to 7 are complete: simulation generators, the diagnosis of each
+> variable, grouping and shared bases, the correction, a pilot and the full
+> pre-registered simulation study (protocol-v1, with two labelled amendments). Stage 8
+> (package, menu of structures, report and app) is in progress. The real-data application
+> (stage 9) has not been done yet, and missing values are not supported.
 
 ---
 
@@ -66,7 +67,7 @@ from recorded seeds into `results/` on your machine.
 
 | Path | Content |
 | --- | --- |
-| `R/` | Package functions: simulation generators and the diagnosis of each variable |
+| `R/` | Package functions: simulation generators, diagnosis, grouping, bases and their menu, correction, verification, report and app |
 | `tests/testthat/` | Tests with known truth for every function |
 | `man/` | Function documentation (generated with roxygen2) |
 | `analysis/` | One script per project stage, numbered in the order they are run |
@@ -84,8 +85,10 @@ from recorded seeds into `results/` on your machine.
 | 3 | Diagnose each variable's dependence | `R/diagnose*.R`, `R/classify.R`, `analysis/03_*` | done |
 | 4 | Group regimes and build shared bases | `R/group.R`, `R/basis.R`, `analysis/04_*` | done |
 | 5 | Correct, and measure the mechanism (H2a, H2b) | `R/correct.R`, `R/verify.R`, `analysis/05*` | done |
-| 6 | Pilot with PCA, MDS, k-means and SOM | `R/downstream.R`, `R/comparators.R`, `analysis/06*` | under review |
-| 7 | Full simulations | — | planned |
+| 6 | Pilot with PCA, MDS, k-means and SOM | `R/downstream.R`, `R/comparators.R`, `analysis/06*` | done |
+| 7 | Full pre-registered simulations | `analysis/07*` | done |
+| 8 | Package: menu of structures, report, app | `R/menu.R`, `R/report.R`, `R/app.R`, `analysis/08*` | in progress |
+| 9 | Real-data application | — | planned |
 
 ### Stage 1 — real-data case study (Foz do Amazonas)
 
@@ -139,6 +142,27 @@ add spatial autocorrelation that belongs to the interpolation, not to the proces
 | `analysis/06_pilot.R` | Twelve pilot scenarios (spatial rough and smooth, temporal, space-time; with no association, with true blocks and random classes, and with contiguous classes), 20 replicates each: every correction approach followed by PCA, MDS (Euclidean and Gower), k-means and SOM, scored with `run_downstream()`; SBSS and MAF (`decorrelate_latent()`) as comparators in space; paired contrasts and the replicates needed for stage 7 |
 | `analysis/06_pilot_figures.R` | A didactic k-means example, spurious patterns, recovery of the truth, contiguous classes, the temporal default and the replicates needed |
 | `analysis/06b_pilot_absorption.R` | How much of the class signal each basis removes, against what its size alone implies |
+
+### Stage 7 — full simulations (pre-registered)
+
+| Script | What it produces |
+| --- | --- |
+| `analysis/07_full_grid.R` | The grid of protocol-v1: 21 base scenarios x five truths (plus perturbations), 100 replicates in space and time and 50 in space-time; every correction approach and every output method |
+| `analysis/07b_h2a.R` | The between-basis error (H2a) on new seeds |
+| `analysis/07_analysis.R` | The pre-registered paired tests with Holm's correction, and the decision rule of the project |
+| `analysis/07c_amendment.R` | Amendment protocol-v1.1: the correlation error against the correlation of the true signal |
+| `analysis/07d_q3_recalibration.R` | Amendment protocol-v1.2: one threshold of the Q3 warning per data family, calibrated on stage 7 and validated on new seeds |
+| `analysis/07e_q3_cause.R` | Why the Q3 statistic depends on the family (exploratory) |
+
+The pre-registered results stay the main ones; the amended results are reported beside
+them and labelled.
+
+### Stage 8 — package
+
+| Script | What it produces |
+| --- | --- |
+| `analysis/08a_q3_reference_pilot.R` | Pilot of a Q3 statistic normalised by an independence reference that keeps each variable's autocorrelation |
+| `analysis/08b_menu_check.R` | Descriptive check of the menu of structures: known period, chosen neighbourhood graph, directional maps |
 
 ## 5. Getting started
 
@@ -250,17 +274,51 @@ of two groups for the pairs of variables across them.
 
 ```r
 gr <- group_regimes(diagnose_variables(sim))
-cr <- correct(sim, gr)                     # default: one global basis (space or time)
+cr <- correct(sim, gr)                     # the defaults below
 cr$R                                       # corrected correlation matrix (for PCA)
-head(cr$X)                                 # corrected data (for k-means, SOM, MDS)
-verify(cr, sim)                            # what was removed and what was kept
+head(cr$X)                                 # corrected data (for k-means, SOM, MDS, HDBSCAN)
+v <- verify(cr, sim)                       # what was removed and what was kept
+report_correction(cr, sim, v, file = "report.html")   # one HTML page for the user
 correct(sim, gr, scope = "groups")         # one basis per group, unions across groups
+run_app()                                  # the same workflow, point and click
 ```
 
-Defaults: spatial and temporal data are corrected with one global basis (the
-simplest choice; in the simulations every basis approach gave nearly the same error);
-spatio-temporal data are whitened group by group (`mode = "whiten"`), which halved the
-error there. Variables without dependence are never corrected among themselves.
+Defaults, chosen from the simulation studies:
+
+- **The correlation matrix `R`** (for PCA): in space and in time, one global basis of the
+  dependent variables, conditional mode; in space-time, whitening group by group.
+- **The data matrix `X`** (for MDS, k-means, SOM, HDBSCAN): each variable corrected with
+  a basis selected on that variable alone (`data_basis = "own"`). A shared basis takes
+  part of every variable's class signal away; a basis per variable keeps the classes.
+- Variables without dependence are never corrected among themselves.
+
+### Choosing the structures yourself: the menu
+
+When you know the system (the period of a cycle, the direction of a current), say so
+with a menu; the parameters are still searched within it, with the same tests and cap
+on k/n:
+
+```r
+m <- basis_menu(term_trend(), term_cycle(period = 12))      # time: trend and an annual cycle
+m <- basis_menu(term_trend(), term_mem(W = "auto"))         # space: choose the neighbourhood graph
+m <- basis_menu(term_trend(), term_aem(direction = 45))     # space: a directional process
+cr <- correct(sim, gr, menu = m)                            # one menu, or a list named by group
+```
+
+Every term is a function of the positions only, so it can be shared by a group. Terms
+that are functions of the variable itself (its lags, the mean of its neighbours) are
+filters: they change what is estimated (the correlation of the innovations) and are not
+in the menu.
+
+### What `verify()` reports
+
+The residual structure of each variable (tested against white noise with the same basis
+removed), Moran correlograms and a multivariate Mantel correlogram, how each
+correlation changed (Delta R), the part of each correlation carried by the large scale,
+the local Moran's I of the corrected variables (where structure is left, in space), and
+the warning of signal at the scale of the basis (question Q3): when much of the
+association between variables lived at the scale of the basis, classes that are regions
+or periods would be removed by the correction.
 
 `correct()` has three modes: `"conditional"` (residuals on the group bases),
 `"whiten"` (the observations are whitened with each group's estimated covariance) and
@@ -352,6 +410,14 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
   decorrelated: the reference tool is clustering constrained by spatial or temporal
   contiguity (Legendre & Legendre 2012, sections 12.6 and 13.3), available as
   `run_downstream(X, "constrained", truth = list(position = ...))`.
+
+### Not supported yet
+
+- **Missing values.** The diagnosis, the bases and the correction stop on missing values.
+- **Filters other than the autoregressive ones** (SAR/CAR whitening in space, STAR for
+  moving patterns) are not implemented.
+- **Coordinates in degrees** should be projected first; distances in degrees are
+  distorted away from the equator.
 
 ## 11. Reproducibility
 

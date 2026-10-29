@@ -1,0 +1,112 @@
+---
+title: "Spatial data: from the diagnosis to the corrected matrix"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Spatial data: from the diagnosis to the corrected matrix}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 4)
+library(depprep)
+```
+
+Samples taken close together resemble each other. When many variables are measured at
+the same sites, part of the correlation between two variables comes only from both
+following the same large-scale pattern of space. `depprep` removes that part and keeps
+the rest, so that PCA, MDS, k-means or SOM see the association between the variables
+rather than the map of the samples.
+
+## Data with known truth
+
+We simulate 200 sites and ten variables: four follow a broad field, three a fine field,
+three have no spatial dependence. Their residual components are correlated in blocks
+(0.5 within the broad and within the fine variables, 0 between them): that is the
+association we want to recover.
+
+```{r simulate}
+g <- sim_groups(sim_group("broad", 4, "exponential", range = 0.5),
+                sim_group("fine", 3, "exponential", range = 0.15),
+                sim_group("none", 3, "none"))
+sim <- sim_spatial(200, g, R_true = make_R_true(g, "blocks", within = 0.5, between = 0), seed = 1)
+dim(sim$X)
+```
+
+With your own data, replace `sim` by the data matrix and give the coordinates
+(`coords`, projected, for example in km) to every function.
+
+## 1. Diagnose each variable alone
+
+The diagnosis looks at one variable at a time (Moran's I, correlogram, variogram), never
+at the correlations between variables, which are what we want to estimate.
+
+```{r diagnose}
+sig <- diagnose_variables(sim, nsim = 99)
+sig[, c("variable", "dependence_p", "range", "nugget_ratio")]
+```
+
+## 2. Group the variables by regime
+
+Variables with similar signatures form a group; each group will share one basis.
+
+```{r group}
+gr <- group_regimes(sig)
+gr[, c("variable", "type", "group")]
+```
+
+## 3. Correct
+
+```{r correct}
+cr <- correct(sim, gr)
+cr
+```
+
+`cr$R` is the corrected correlation matrix (for PCA). `cr$X` is the corrected data
+(for MDS, k-means, SOM), where each variable is corrected with a basis selected on that
+variable alone, which keeps the classes.
+
+Because the data are simulated, we can compare both matrices with the true
+correlation of the residual components:
+
+```{r compare}
+err <- function(R) sqrt(mean((R - sim$R_true)[upper.tri(R)]^2))
+c(raw = err(cor(sim$X)), corrected = err(cr$R))
+```
+
+## 4. Verify
+
+```{r verify}
+v <- verify(cr, sim, nperm = 49)
+v
+```
+
+The table `v$variables` says, for each variable, how much was removed, its
+autocorrelation before and after and whether structure is left; `v$lisa` gives the local
+Moran's I of each corrected variable, to see where structure is left. The Q3 warning
+says whether much of the association between variables lived at the scale of the
+basis: if the classes you look for could be regions, the correction would remove them.
+
+```{r lisa}
+head(v$variables[, c("variable", "removed", "autocor_before", "autocor_after", "lisa_share")])
+```
+
+## 5. Your own structures
+
+If you know the process (here, say, that only the broad trend matters, or that the
+neighbourhood graph should be chosen), give a menu; the parameters are still searched
+with the same tests:
+
+```{r menu}
+m <- basis_menu(term_trend(), term_mem(W = "auto"))
+cr_m <- correct(sim, gr, menu = m, scope = "groups")
+vapply(cr_m$bases, function(b) attr(b, "W"), "")
+```
+
+## 6. A report for the user
+
+```{r report, eval = FALSE}
+report_correction(cr, sim, v, file = "depprep_report.html")
+```
+
+The same steps are available point and click with `run_app()`.
