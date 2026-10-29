@@ -142,6 +142,7 @@ When it fires, check whether the classes sought could be regions or periods befo
 using the corrected data for them.
 }
 \examples{
+\donttest{
 g <- sim_groups(sim_group("long", 4, "matern", range = 0.5), sim_group("none", 2, "none"))
 s <- sim_spatial(300, g, seed = 1)
 cr <- correct(s, group_regimes(diagnose_variables(s, nsim = 99)))
@@ -149,6 +150,7 @@ v <- verify(cr, s, nperm = 99)
 v$delta_summary
 v$variables[, c("variable", "large_share", "correlogram_p", "extent")]
 v$q3    # fires: one large-scale field is shared by 4 of the 6 variables (see Details)
+}
 }
 \references{
 Anselin, L. (1995). Local indicators of spatial association - LISA.

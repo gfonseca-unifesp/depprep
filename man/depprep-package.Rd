@@ -8,6 +8,14 @@
 \description{
 Preprocessing that corrects spatial, temporal and spatio-temporal autocorrelation in data sets with many variables of different dependence regimes, while preserving the correlations between variables. Variables with similar dependence signatures share a common basis, and the corrected matrix is intended for PCA, MDS, k-means and self-organizing maps.
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/gfonseca-unifesp/depprep}
+  \item Report bugs at \url{https://github.com/gfonseca-unifesp/depprep/issues}
+}
+
+}
 \author{
 \strong{Maintainer}: Gustavo Fonseca \email{gfonseca@unifesp.br}
 

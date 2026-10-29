@@ -1,7 +1,7 @@
 Package: depprep
 Title: Dependence-Aware Preprocessing for Multivariate Exploratory
     Analysis
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: 
     person("Gustavo", "Fonseca", , "gfonseca@unifesp.br", role = c("aut", "cre"))
 Description: Preprocessing that corrects spatial, temporal and

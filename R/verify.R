@@ -114,6 +114,7 @@
 #'   Legendre, P. and Legendre, L. (2012). *Numerical Ecology*, 3rd ed.
 #'   Elsevier. Sections 12.3, 13.1.1, 13.1.6 and 13.5.
 #' @examples
+#' \donttest{
 #' g <- sim_groups(sim_group("long", 4, "matern", range = 0.5), sim_group("none", 2, "none"))
 #' s <- sim_spatial(300, g, seed = 1)
 #' cr <- correct(s, group_regimes(diagnose_variables(s, nsim = 99)))
@@ -121,6 +122,7 @@
 #' v$delta_summary
 #' v$variables[, c("variable", "large_share", "correlogram_p", "extent")]
 #' v$q3    # fires: one large-scale field is shared by 4 of the 6 variables (see Details)
+#' }
 #' @importFrom vegan mantel.correlog
 #' @export
 verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, period = NULL, alpha = 0.05,

@@ -66,11 +66,13 @@
 #'   `period` and `ar_order` (median by group), `family`, and with
 #'   `split = "subspace"` `basis_distance` (one matrix per regime group).
 #' @examples
+#' \donttest{
 #' g <- sim_groups(sim_group("long", 4, "exponential", range = 0.5),
 #'                 sim_group("short", 4, "exponential", range = 0.1),
 #'                 sim_group("none", 3, "none"))
 #' s <- sim_spatial(400, g, seed = 1)
 #' group_regimes(diagnose_variables(s))
+#' }
 #' @importFrom mclust mclustBIC
 #' @export
 group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust", "type"), n_groups = NULL,

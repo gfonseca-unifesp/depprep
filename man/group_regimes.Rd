@@ -106,9 +106,11 @@ group. Variables below \code{ambiguity} are flagged as ambiguous. Membership of 
 the first (regime) level.
 }
 \examples{
+\donttest{
 g <- sim_groups(sim_group("long", 4, "exponential", range = 0.5),
                 sim_group("short", 4, "exponential", range = 0.1),
                 sim_group("none", 3, "none"))
 s <- sim_spatial(400, g, seed = 1)
 group_regimes(diagnose_variables(s))
+}
 }

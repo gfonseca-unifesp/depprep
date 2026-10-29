@@ -97,11 +97,13 @@
 #'   structure in the study of ecological communities. Global Ecology and Biogeography
 #'   19, 174-184.
 #' @examples
+#' \donttest{
 #' g <- sim_groups(sim_group("long", 4, "matern", range = 0.5), sim_group("none", 2, "none"))
 #' s <- sim_spatial(300, g, R_true = make_R_true(g, "blocks", within = 0.5, between = 0), seed = 1)
 #' gr <- group_regimes(diagnose_variables(s, nsim = 99))
 #' cr <- correct(s, gr)
 #' round(cr$R, 2)
+#' }
 #' @export
 correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases = NULL,
                     mode = NULL, scope = NULL, data_basis = c("own", "union"), period = NULL,

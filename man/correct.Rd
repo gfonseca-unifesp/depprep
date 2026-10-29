@@ -130,11 +130,13 @@ the innovations, which equals the residual correlation when the residual associa
 does not itself persist in time.
 }
 \examples{
+\donttest{
 g <- sim_groups(sim_group("long", 4, "matern", range = 0.5), sim_group("none", 2, "none"))
 s <- sim_spatial(300, g, R_true = make_R_true(g, "blocks", within = 0.5, between = 0), seed = 1)
 gr <- group_regimes(diagnose_variables(s, nsim = 99))
 cr <- correct(s, gr)
 round(cr$R, 2)
+}
 }
 \references{
 Borcard, D., Legendre, P., Avois-Jacquet, C. and Tuomisto, H. (2004).
