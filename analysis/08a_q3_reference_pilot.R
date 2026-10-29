@@ -61,26 +61,13 @@ one_ref <- function(g, r) {
              kn = ncol(U) / nrow(s$X))
 }
 
-if (!identical(Sys.getenv("DEPPREP_SOURCE_ONLY"), "1")) {
-  Sys.setenv(RENV_CONFIG_SANDBOX_ENABLED = "FALSE")
-  cl <- makeCluster(max(1, min(24, detectCores() - 4)), setup_timeout = 900)
-  clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE))
-    source(file.path("analysis", "d4_scenarios.R")); NULL }, getwd())
-  clusterExport(cl, c("base_seed", "B", "one_ref"))
-  jobs <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) data.frame(i = i, r = seq_len(grid$reps[i]))))
-  jobs <- jobs[order(grid$family[jobs$i] != "spatiotemporal"), ]                  # the slow ones first
-  res <- parLapply(cl, seq_len(nrow(jobs)), function(j, jobs, grid) tryCatch(one_ref(grid[jobs$i[j], ], jobs$r[j]),
-    error = function(e) data.frame(combo = grid$combo[jobs$i[j]], replicate = jobs$r[j], seed = NA, statistic = NA, ref_mean = NA,
-                                   ref_sd = NA, kn = NA, error = conditionMessage(e))), jobs = jobs, grid = grid)
-  stopCluster(cl)
-  res <- do.call(rbind, lapply(res, function(d) { if (is.null(d$error)) d$error <- NA_character_; d }))
-  res <- merge(res, grid[, c("combo", "label", "base_id", "data_family", "truth_label")], by = "combo")
+# Summaries from the replicates. A replicate without any basis projects nothing: its
+# normalised statistics are set to 0 (no warning possible) instead of 0 / 0.
+summarise_pilot <- function(res) {
   res$excess <- res$statistic - res$ref_mean
-  res$z <- res$excess / res$ref_sd
-  res$ratio <- res$statistic / res$ref_mean
-  dir.create("results", showWarnings = FALSE)
+  res$z <- ifelse(res$ref_sd > 0, res$excess / res$ref_sd, 0)
+  res$ratio <- ifelse(res$ref_mean > 0, res$statistic / res$ref_mean, 0)
   write.csv(res, file.path("results", "q3_reference_pilot.csv"), row.names = FALSE)
-
   # per normalisation: the midpoint threshold of amendment v1.2 by family and pooled, and the
   # warning rates of the pooled threshold by family, truth and size (gradient id 19 apart)
   ok <- res[is.finite(res$statistic) & res$base_id != 19, ]
@@ -105,4 +92,24 @@ if (!identical(Sys.getenv("DEPPREP_SOURCE_ONLY"), "1")) {
   write.csv(summ, file.path("results", "q3_reference_pilot_summary.csv"), row.names = FALSE)
   print(thr, digits = 3, row.names = FALSE)
   cat("errors:", sum(!is.na(res$error)), "\n")
+}
+
+if (identical(commandArgs(trailingOnly = TRUE)[1], "summary")) {
+  summarise_pilot(read.csv(file.path("results", "q3_reference_pilot.csv"), stringsAsFactors = FALSE))
+} else if (!identical(Sys.getenv("DEPPREP_SOURCE_ONLY"), "1")) {
+  Sys.setenv(RENV_CONFIG_SANDBOX_ENABLED = "FALSE")
+  cl <- makeCluster(max(1, min(24, detectCores() - 4)), setup_timeout = 900)
+  clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE))
+    source(file.path("analysis", "d4_scenarios.R")); NULL }, getwd())
+  clusterExport(cl, c("base_seed", "B", "one_ref"))
+  jobs <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) data.frame(i = i, r = seq_len(grid$reps[i]))))
+  jobs <- jobs[order(grid$family[jobs$i] != "spatiotemporal"), ]                  # the slow ones first
+  res <- parLapply(cl, seq_len(nrow(jobs)), function(j, jobs, grid) tryCatch(one_ref(grid[jobs$i[j], ], jobs$r[j]),
+    error = function(e) data.frame(combo = grid$combo[jobs$i[j]], replicate = jobs$r[j], seed = NA, statistic = NA, ref_mean = NA,
+                                   ref_sd = NA, kn = NA, error = conditionMessage(e))), jobs = jobs, grid = grid)
+  stopCluster(cl)
+  res <- do.call(rbind, lapply(res, function(d) { if (is.null(d$error)) d$error <- NA_character_; d }))
+  res <- merge(res, grid[, c("combo", "label", "base_id", "data_family", "truth_label")], by = "combo")
+  dir.create("results", showWarnings = FALSE)
+  summarise_pilot(res)
 }
