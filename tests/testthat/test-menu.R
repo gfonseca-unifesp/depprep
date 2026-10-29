@@ -83,3 +83,17 @@ test_that("a seasonal basis with a diagnosed period of 2 is built as before the 
   expect_s3_class(b, "depprep_basis")
   expect_true(all(grepl("_p2$|^trend", colnames(unclass(b)))))
 })
+
+test_that("the AEM maps of the same positions and direction are built once", {
+  s <- sim_spatial(60, sim_groups(sim_group("a", 2, "exponential", range = 0.4)), seed = 4)
+  cache <- depprep:::.aem_cache
+  cache$entries <- NULL
+  a1 <- depprep:::.aem_vectors(s$coords, 30)
+  expect_length(cache$entries, 1)
+  expect_identical(depprep:::.aem_vectors(s$coords, 30), a1)
+  expect_length(cache$entries, 1)
+  a2 <- depprep:::.aem_vectors(s$coords, 120)
+  expect_length(cache$entries, 2)
+  expect_false(isTRUE(all.equal(a1, a2)))
+  expect_identical(depprep:::.aem_build(s$coords, 30), a1)
+})

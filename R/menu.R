@@ -191,6 +191,17 @@ print.depprep_menu <- function(x, ...) {
 # expectation) are kept, as for the dbMEM: all n - 1 maps span almost every pattern, and
 # the global test of the selection would have no power.
 .aem_vectors <- function(coords, direction) {
+  # building the oriented graph is slow (about a minute at n = 200), and correct() asks for
+  # the same maps for the group basis and for each variable's own basis: keep the last few
+  coords <- as.matrix(coords)
+  for (e in .aem_cache$entries) if (e$direction == direction && identical(e$coords, coords)) return(e$vectors)
+  m <- .aem_build(coords, direction)
+  .aem_cache$entries <- c(list(list(coords = coords, direction = direction, vectors = m)), utils::head(.aem_cache$entries, 3))
+  m
+}
+.aem_cache <- new.env(parent = emptyenv())
+
+.aem_build <- function(coords, direction) {
   nb <- spdep::tri2nb(coords)
   b <- adespatial::aem.build.binary(nb.object = nb, coords = cbind(seq_len(nrow(coords)), coords),
                                     rot.angle = direction, plot.connexions = FALSE)
