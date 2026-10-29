@@ -24,6 +24,8 @@ Imports:
     adespatial,
     cluster,
     dbscan,
+    graphics,
+    grDevices,
     gstat,
     kohonen,
     Matrix,
