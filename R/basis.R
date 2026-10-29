@@ -69,6 +69,7 @@
 #' @export
 build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL, type, period = NULL,
                               kn_max = 0.25, alpha = 0.05, nperm = 199, seed = 1L, trend = TRUE) {
+  .stop_if_missing(X_group, coords, time)
   Y <- scale(as.matrix(X_group))
   Y[!is.finite(Y)] <- 0                                   # constant columns carry no information
   n <- nrow(Y)

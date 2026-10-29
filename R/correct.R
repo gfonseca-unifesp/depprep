@@ -106,6 +106,7 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     d <- .data_parts(X); X <- d$X; coords <- d$coords; time <- d$time; index <- d$index
   }
   X <- as.matrix(X)
+  .stop_if_missing(X, coords, time)
   if (is.null(colnames(X))) colnames(X) <- paste0("V", seq_len(ncol(X)))
   family <- if (!is.null(coords) && !is.null(index)) "spatiotemporal" else if (!is.null(coords)) "spatial" else
     if (!is.null(time)) "temporal" else stop("Give `coords`, `time` or `coords` and `index`.", call. = FALSE)

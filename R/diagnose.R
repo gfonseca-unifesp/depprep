@@ -73,6 +73,7 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
   }
   X <- as.matrix(X)
   if (!is.numeric(X)) stop("`X` must be numeric.", call. = FALSE)
+  .stop_if_missing(X, coords, time)
   if (is.null(colnames(X))) colnames(X) <- paste0("V", seq_len(ncol(X)))
   family <- if (!is.null(coords) && !is.null(index)) "spatiotemporal" else
     if (!is.null(coords)) "spatial" else if (!is.null(time)) "temporal" else

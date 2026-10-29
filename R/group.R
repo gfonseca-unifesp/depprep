@@ -145,6 +145,18 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust",
   data
 }
 
+# Stop on missing or infinite values: the diagnosis, the bases and the correction need
+# complete data (missing data are planned for a later version).
+.stop_if_missing <- function(X, coords = NULL, time = NULL) {
+  bad <- c(X = any(!is.finite(as.matrix(X))), coords = !is.null(coords) && any(!is.finite(as.matrix(coords))),
+           time = !is.null(time) && any(!is.finite(time)))
+  if (any(bad)) {
+    stop(sprintf("Missing or infinite values in %s: missing values are not supported yet; remove or fill them first.",
+                 paste0("`", names(bad)[bad], "`", collapse = ", ")), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 # Second grouping level: within each regime group, split the variables by the distance
 # between their own bases (each selected on the variable alone).
 .split_by_subspace <- function(signature, data, group, group_type, threshold, seed) {
