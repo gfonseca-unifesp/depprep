@@ -13,9 +13,10 @@
 # * spatial, n = 628 (a map of the basin, for example a time mean): the groups of ids 2
 #   (high) and 4 (low), 100 replicates;
 # * space-time, 628 sites x 93 times: the groups of id 9 (rough fields), 16 replicates.
-#   One replicate at this size took 2.4 h on one core (correct 1.9 h, verify 0.5 h), so the
-#   space-time part runs on 16 workers, one replicate per worker, about 12 h in all; it is a
-#   coarse check (1 warning in 16 is 6%), run after the temporal and spatial parts.
+#   One replicate at this size took 2.4 h on one core (correct 1.9 h, verify 0.5 h); it is a
+#   coarse check (1 warning in 16 is 6%), run after the temporal and spatial parts. A first
+#   run on 16 workers ran out of memory (128 GB), so the 80 space-time replicates run one at
+#   a time on 10 workers, each saved on its own (the seeds, and so the results, are the same).
 # Five truths each (null, structured, contiguous, crossed, 0.3 between groups). The same
 # path as analysis/07d_q3_recalibration.R up to the statistic; the thresholds are those of
 # results/q3_thresholds_v12.csv, fixed.
@@ -32,8 +33,8 @@ source(file.path("analysis", "d4_scenarios.R"))
 
 base_seed <- 14300L
 N_REP <- 100L
-N_REP_ST <- 16L          # space-time at 628 x 93: one replicate per worker
-WORKERS_ST <- 16L        # fewer workers for the large space-time fits (memory)
+N_REP_ST <- 16L          # space-time at 628 x 93
+WORKERS_ST <- 10L        # fewer workers for the large space-time fits (memory)
 out_dir <- file.path("results", "q3_size_check")
 bases_all <- rbind(scenarios, extra_scenarios, d14_scenarios)
 truths <- data.frame(truth = c("null", "structured", "contiguous", "crossed", "structured"),
@@ -75,7 +76,7 @@ if (!identical(Sys.getenv("DEPPREP_SOURCE_ONLY"), "1")) {
     cl <- makeCluster(workers, setup_timeout = 900)
     clusterCall(cl, function(wd) { setwd(wd); suppressMessages(devtools::load_all(quiet = TRUE))
       source(file.path("analysis", "d4_scenarios.R")); NULL }, getwd())
-    clusterExport(cl, c("base_seed", "one_size"), envir = globalenv())
+    clusterExport(cl, c("base_seed", "one_size", "out_dir", "log_file"), envir = globalenv())
     cl
   }
   # summaries of the combinations done so far (written again after each part)
@@ -100,12 +101,9 @@ if (!identical(Sys.getenv("DEPPREP_SOURCE_ONLY"), "1")) {
   }
   cl <- start_cluster(max(1, min(24, detectCores() - 4)))
   cat(format(Sys.time()), "start;", nrow(grid), "combinations\n", file = log_file, append = TRUE)
-  # the cheap temporal and spatial parts first, then the space-time part on fewer workers
-  for (k in grid$combo[order(grid$family == "spatiotemporal", grid$combo)]) {
+  # the cheap temporal and spatial parts first, one combination at a time
+  for (k in grid$combo[grid$family != "spatiotemporal"]) {
     g <- grid[grid$combo == k, ]
-    if (g$family == "spatiotemporal" && length(cl) != WORKERS_ST) {
-      summarise_size(); stopCluster(cl); cl <- start_cluster(WORKERS_ST)
-    }
     f <- file.path(out_dir, sprintf("combo_%03d.rds", k))
     if (file.exists(f)) next
     t0 <- Sys.time()
@@ -113,6 +111,28 @@ if (!identical(Sys.getenv("DEPPREP_SOURCE_ONLY"), "1")) {
     cat(format(Sys.time()), sprintf("combo %d (%s %s) done in %.1f min\n", k, g$label, g$truth_label,
                                     as.numeric(difftime(Sys.time(), t0, units = "mins"))), file = log_file, append = TRUE)
   }
+  # then the space-time part on fewer workers, one replicate per task, each saved on its own
+  summarise_size(); stopCluster(cl); cl <- start_cluster(WORKERS_ST)
+  st <- grid[grid$family == "spatiotemporal", ]
+  rep_file <- function(k, r) file.path(out_dir, sprintf("combo_%03d_rep_%02d.rds", k, r))
+  tasks <- expand.grid(r = seq_len(N_REP_ST), combo = st$combo)
+  tasks <- tasks[!file.exists(file.path(out_dir, sprintf("combo_%03d.rds", tasks$combo))) &
+                 !file.exists(rep_file(tasks$combo, tasks$r)), ]
+  clusterExport(cl, "rep_file", envir = environment())
+  invisible(clusterApplyLB(cl, split(tasks, seq_len(nrow(tasks))), function(tk, grid) {
+    g <- grid[grid$combo == tk$combo, ]
+    t0 <- Sys.time()
+    saveRDS(one_size(g, tk$r), rep_file(tk$combo, tk$r))
+    cat(sprintf("%s combo %d (%s %s) replicate %d done in %.1f min, %.0f MB
+", format(Sys.time()), tk$combo, g$label, g$truth_label,
+                tk$r, as.numeric(difftime(Sys.time(), t0, units = "mins")), readRDS(rep_file(tk$combo, tk$r))$mem_mb),
+        file = log_file, append = TRUE)
+    NULL
+  }, grid = grid))
   stopCluster(cl)
+  for (k in st$combo) {
+    f <- file.path(out_dir, sprintf("combo_%03d.rds", k))
+    if (!file.exists(f)) saveRDS(do.call(rbind, lapply(seq_len(N_REP_ST), function(r) readRDS(rep_file(k, r)))), f)
+  }
   summarise_size()
 }
