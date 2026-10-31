@@ -40,6 +40,47 @@ test_that("figures are saved in every format at the size asked", {
   expect_identical(depprep:::.class_colours(c(0, 1, 9)), c("grey80", "#E69F00", "#E69F00"))
 })
 
+test_that("every plot of the diagnosis is drawn for its family", {
+  set.seed(1)
+  sp <- depprep:::.app_data(depprep:::.app_example(), "spatial", x = "x", y = "y")
+  tm <- depprep:::.app_data(data.frame(t = 1:60, a = cumsum(stats::rnorm(60)), b = sin(1:60 / 2) + stats::rnorm(60)), "temporal", time = "t")
+  st_df <- data.frame(site = rep(1:20, times = 12), t = rep(1:12, each = 20), x = rep(stats::runif(20), 12), y = rep(stats::runif(20), 12))
+  st_df$a <- st_df$x + st_df$t / 6 + stats::rnorm(240); st_df$b <- stats::rnorm(240)
+  st <- depprep:::.app_data(st_df, "spatiotemporal", x = "x", y = "y", time = "t", site = "site")
+  expect_identical(unname(depprep:::.diagnosis_plots("spatial")), c("variogram", "correlogram", "map"))
+  for (d in list(sp, tm, st)) for (w in depprep:::.diagnosis_plots(d$family)) {
+    f <- tempfile(fileext = ".pdf")
+    expect_silent(depprep:::.save_figure(f, function() depprep:::.draw_diagnosis(d, colnames(d$X)[1], 1.1, 0.8, w), "pdf"))
+    expect_gt(file.size(f), 1000)
+    expect_true(nzchar(depprep:::.diagnosis_plot_help[[w]]))
+  }
+  expect_error(depprep:::.draw_diagnosis(tm, "a", what = "map"), "should be one of")
+})
+
+test_that("the graphs of the menu are drawn and the menus put in words", {
+  set.seed(3)
+  xy <- cbind(lon = stats::runif(40), lat = stats::runif(40))
+  links <- lapply(c(dbmem = "dbmem", del = "del", gab = "gab", rel = "rel"), function(w) depprep:::.menu_graph_links(xy, w))
+  key <- function(e) paste(e[, 1], e[, 2])
+  expect_true(all(vapply(links, function(e) all(e[, 1] < e[, 2]), TRUE)))
+  # the relative-neighbourhood graph is inside the Gabriel graph, which is inside the Delaunay graph
+  expect_true(all(key(links$rel) %in% key(links$gab)))
+  expect_true(all(key(links$gab) %in% key(links$del)))
+  # the distance-based graph links every site
+  expect_setequal(unique(c(links$dbmem)), 1:40)
+  expect_identical(depprep:::.menu_graph_links(xy, "auto"), links$del)
+  expect_identical(depprep:::.menu_graph_links(xy, "gab_flin"), links$gab)
+  expect_true(all(names(depprep:::.graph_help) %in% depprep:::.graph_choices))
+  f <- tempfile(fileext = ".pdf")
+  expect_silent(depprep:::.save_figure(f, function() depprep:::.draw_menu_graph(xy, "gab", direction = 45), "pdf"))
+  expect_gt(file.size(f), 1000)
+  expect_identical(depprep:::.menu_words(NULL, "spatial"), "automatic choice")
+  expect_identical(depprep:::.menu_words(basis_menu(term_trend(), term_mem(W = "gab"), term_aem(30)), "spatial"),
+                   "trend + spatial MEM (gabriel graph) + directional maps toward 30 degrees")
+  expect_identical(depprep:::.menu_words(basis_menu(term_cycle(), term_mem()), "temporal"), "cycle (period from the periodogram) + temporal MEM")
+  expect_identical(depprep:::.menu_words(depprep:::.menu_of_type("isotropic"), "spatial"), "trend + spatial MEM (distance-based)")
+})
+
 test_that(".format_table() shows 3 significant digits and leaves missing values blank", {
   d <- data.frame(a = c("x", NA), p = c(0.005, NA), big = c(35100, 0.0273), ok = c(TRUE, NA), stringsAsFactors = FALSE)
   f <- depprep:::.format_table(d)

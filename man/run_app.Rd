@@ -18,9 +18,10 @@ Opens a point-and-click interface to the whole workflow, in six steps:
 \item load a CSV file and mark the position columns (coordinates, time, site);
 \item say which technique the corrected data are for and whether the classes sought
 could be regions or periods;
-\item diagnose the dependence of each variable, with its plots (variogram, ACF,
-periodogram), and change a regime by hand or build the menu of structures of a
-group (\code{\link[=basis_menu]{basis_menu()}});
+\item diagnose the dependence of each variable, with its plots (variogram, Moran
+correlogram and map in space; series with trends, ACF and periodogram in time), and
+change a regime by hand or build the menu of structures of a group
+(\code{\link[=basis_menu]{basis_menu()}}), each structure explained;
 \item correct, with the default explained (the data matrix with one basis per variable,
 the correlation matrix with the shared basis) and the alternatives;
 \item verify what the correction removed and kept, with a preview of the technique
@@ -30,8 +31,7 @@ before and after;
 }
 }
 \details{
-Coordinates can be projected (for example in km) or longitude and latitude in degrees.
-Degrees treat a degree of longitude as a degree of latitude, which holds near the
+Coordinates are longitude (x) and latitude (y) in decimal degrees. Degrees treat a degree of longitude as a degree of latitude, which holds near the
 equator; the app says how much shorter a degree of longitude is at the largest latitude
 of the data, and asks to project them when that exceeds 2\% (beyond about 11 degrees of
 latitude).

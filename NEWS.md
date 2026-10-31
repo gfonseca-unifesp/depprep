@@ -13,9 +13,14 @@
   regime, group, stability) in one table to read or save.
 * `report_correction()` writes one self-contained HTML page that explains a correction,
   opening with the diagnosis and showing every test before and after.
-* `run_app()` opens a point-and-click interface to the whole workflow; coordinates can
-  be projected or in degrees (near the equator), and the diagnosis and the local
-  Moran's I can be downloaded.
+* `run_app()` opens a point-and-click interface to the whole workflow, with longitude
+  and latitude as coordinates. The diagnosis shows each variable's variogram, Moran
+  correlogram and map, or its series with the linear and cubic trends, ACF and
+  periodogram; the menu of structures explains each term and draws the neighbourhood
+  graph and the direction of the directional maps. The diagnosis and the local Moran's
+  I can be downloaded.
+* `term_aem(direction)` takes the direction counter-clockwise from the x axis, as
+  documented; it was taken as a compass bearing before.
 * Example tables of the Foz do Amazonas ocean case in `inst/extdata/`.
 * The diagnosis, the bases and the correction stop with a clear message on missing
   values instead of filling them.

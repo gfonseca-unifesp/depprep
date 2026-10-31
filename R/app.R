@@ -4,9 +4,10 @@
 #' 1. load a CSV file and mark the position columns (coordinates, time, site);
 #' 2. say which technique the corrected data are for and whether the classes sought
 #'    could be regions or periods;
-#' 3. diagnose the dependence of each variable, with its plots (variogram, ACF,
-#'    periodogram), and change a regime by hand or build the menu of structures of a
-#'    group ([basis_menu()]);
+#' 3. diagnose the dependence of each variable, with its plots (variogram, Moran
+#'    correlogram and map in space; series with trends, ACF and periodogram in time), and
+#'    change a regime by hand or build the menu of structures of a group
+#'    ([basis_menu()]), each structure explained;
 #' 4. correct, with the default explained (the data matrix with one basis per variable,
 #'    the correlation matrix with the shared basis) and the alternatives;
 #' 5. verify what the correction removed and kept, with a preview of the technique
@@ -14,8 +15,7 @@
 #' 6. download the corrected data, the correlation matrix, the report
 #'    ([report_correction()]) and the R code that reproduces everything.
 #'
-#' Coordinates can be projected (for example in km) or longitude and latitude in degrees.
-#' Degrees treat a degree of longitude as a degree of latitude, which holds near the
+#' Coordinates are longitude (x) and latitude (y) in decimal degrees. Degrees treat a degree of longitude as a degree of latitude, which holds near the
 #' equator; the app says how much shorter a degree of longitude is at the largest latitude
 #' of the data, and asks to project them when that exceeds 2% (beyond about 11 degrees of
 #' latitude).
@@ -223,27 +223,89 @@ run_app <- function(launch.browser = interactive()) {
   graphics::legend("topright", names(cols), pch = 19, col = cols, bty = "n", cex = 0.75)
 }
 
-# The plots of the diagnosis of one variable: variogram (space), ACF and periodogram
-# (time), site means and the ACF of the mean series (space-time).
-.draw_diagnosis <- function(d, variable, cex = 1, pt = 1) {
+# The plots of the diagnosis of one variable, by family: the variogram, the Moran
+# correlogram and the map of the values in space; the series with its trends and the ACF
+# and periodogram in time; in space-time, the same on the site means and on the series
+# of the sites.
+.diagnosis_plots <- function(family) switch(family,
+  spatial = c("Variogram" = "variogram", "Moran correlogram" = "correlogram", "Map of the values" = "map"),
+  temporal = c("Series and trends" = "series", "ACF and periodogram" = "acf"),
+  spatiotemporal = c("Map of the site means" = "map", "Moran correlogram of the site means" = "correlogram",
+                     "Series of the sites and trends" = "series", "ACF of the mean series" = "acf"))
+
+.draw_diagnosis <- function(d, variable, cex = 1, pt = 1, what = .diagnosis_plots(d$family)[[1]]) {
+  what <- match.arg(what, unname(.diagnosis_plots(d$family)))
   z <- d$X[, variable]
-  if (d$family == "spatial") {
-    graphics::par(cex = cex, mar = c(4.2, 4.2, 2.5, 1))
-    v <- gstat::variogram(z ~ 1, locations = ~ x + y, data = data.frame(z = z, x = d$coords[, 1], y = d$coords[, 2]))
-    graphics::plot(v$dist, v$gamma, pch = 19, cex = pt, xlab = "distance", ylab = "semivariance", main = paste("Variogram of", variable))
-  } else if (d$family == "temporal") {
-    o <- order(d$time)
-    graphics::par(mfrow = c(1, 2), cex = cex, mar = c(4.2, 4.2, 2.5, 1))
-    stats::acf(z[o], main = paste("ACF of", variable))
-    sp <- stats::spec.pgram(z[o], taper = 0, detrend = TRUE, plot = FALSE)
-    graphics::plot(1 / sp$freq, sp$spec, type = "h", log = "x", xlab = "period", ylab = "power", main = "Periodogram")
-  } else {
-    graphics::par(mfrow = c(1, 2), cex = cex, mar = c(4.2, 4.2, 2.5, 1))
-    m <- tapply(z, d$index$site, mean)
-    graphics::plot(d$coords, pch = 19, cex = pt, col = grDevices::hcl.colors(20)[cut(m, 20)], asp = 1, main = "Site means", xlab = "x", ylab = "y")
-    stats::acf(tapply(z, d$index$time, mean), main = "ACF of the mean series")
-  }
+  st <- d$family == "spatiotemporal"
+  site_z <- if (st) as.vector(tapply(z, d$index$site, mean)) else z
+  lab <- .axis_names(d$coords)
+  graphics::par(cex = cex, mar = c(4.2, 4.2, 2.5, 1))
+  switch(what,
+    variogram = {
+      v <- gstat::variogram(z ~ 1, locations = ~ x + y, data = data.frame(z = z, x = d$coords[, 1], y = d$coords[, 2]))
+      graphics::plot(v$dist, v$gamma, pch = 19, cex = pt, xlab = "distance", ylab = "semivariance", main = paste("Variogram of", variable))
+    },
+    correlogram = {
+      cg <- .moran_correlogram(matrix(site_z, ncol = 1, dimnames = list(NULL, variable)), d$coords,
+                               .fixed_space(matrix(0, length(site_z), 0)))
+      sig <- !is.na(cg$p_progressive) & cg$p_progressive <= 0.05
+      graphics::plot(cg$distance, cg$moran_I, type = "b", pch = ifelse(sig, 19, 1), cex = pt, col = "#2a6fb0",
+                     ylim = range(c(cg$moran_I, cg$expected, 0), na.rm = TRUE), xlab = "distance (centre of the class)",
+                     ylab = "Moran's I", main = paste0("Moran correlogram of ", variable, if (st) " (site means)"))
+      graphics::abline(h = cg$expected[1], lty = 3)
+      graphics::legend("topright", c("significant (5%, progressive Bonferroni)", "not significant", "expected without dependence"),
+                       pch = c(19, 1, NA), lty = c(NA, NA, 3), col = c("#2a6fb0", "#2a6fb0", "black"), bty = "n", cex = 0.8)
+    },
+    map = {
+      graphics::par(mar = c(4.2, 4.2, 2.5, 7))
+      pal <- grDevices::hcl.colors(20)
+      graphics::plot(d$coords, pch = 19, cex = pt, col = pal[cut(site_z, 20)], asp = 1, xlab = lab[1], ylab = lab[2],
+                     main = paste0(variable, if (st) " (site means)"))
+      at <- seq(min(site_z), max(site_z), length.out = 5)
+      graphics::legend("topleft", inset = c(1.02, 0), legend = format(signif(at, 3)), pch = 15, pt.cex = 1.6,
+                       col = pal[c(1, 5, 10, 15, 20)], bty = "n", xpd = NA, cex = 0.8)
+    },
+    series = {
+      if (st) {
+        tm <- sort(unique(d$index$time))
+        M <- tapply(z, list(d$index$site, d$index$time), mean)
+        shown <- unique(round(seq(1, nrow(M), length.out = min(60, nrow(M)))))
+        y <- colMeans(M, na.rm = TRUE)
+        graphics::matplot(tm, t(M[shown, , drop = FALSE]), type = "l", lty = 1, col = grDevices::adjustcolor("grey50", 0.35),
+                          xlab = "time", ylab = variable, main = sprintf("%s: %d of %d sites (grey) and their mean (black)", variable, length(shown), nrow(M)))
+        graphics::lines(tm, y, lwd = 2)
+      } else {
+        o <- order(d$time); tm <- d$time[o]; y <- z[o]
+        graphics::plot(tm, y, type = "l", col = "grey40", xlab = "time", ylab = variable, main = paste("Series of", variable))
+      }
+      lin <- stats::lm(y ~ tm)
+      cub <- stats::lm(y ~ stats::poly(tm, min(3, length(unique(tm)) - 1)))
+      graphics::lines(tm, stats::fitted(lin), lty = 2, lwd = 2, col = "#c0392b")
+      graphics::lines(tm, stats::fitted(cub), lwd = 2, col = "#2a6fb0")
+      r2 <- c(summary(lin)$r.squared, summary(cub)$r.squared)
+      graphics::legend("topleft", c(sprintf("linear trend, R2 = %.2f (a trend regime above %.2f)", r2[1], default_thresholds()$trend_r2),
+                                    sprintf("cubic trend (the menu's trend), R2 = %.2f", r2[2])),
+                       lty = c(2, 1), lwd = 2, col = c("#c0392b", "#2a6fb0"), bty = "n", cex = 0.8)
+    },
+    acf = if (st) {
+      stats::acf(tapply(z, d$index$time, mean), main = paste("ACF of the mean series of", variable))
+    } else {
+      o <- order(d$time)
+      graphics::par(mfrow = c(1, 2))
+      stats::acf(z[o], main = paste("ACF of", variable))
+      sp <- stats::spec.pgram(z[o], taper = 0, detrend = TRUE, plot = FALSE)
+      graphics::plot(1 / sp$freq, sp$spec, type = "h", log = "x", xlab = "period", ylab = "power", main = "Periodogram")
+    })
+  invisible(NULL)
 }
+
+# How to read each plot of the diagnosis.
+.diagnosis_plot_help <- c(
+  variogram = "Semivariance (half the mean squared difference) of pairs of sites by distance: it rises while near sites are more alike than distant ones, and levels off at the range of the dependence.",
+  correlogram = "Moran's I by distance class: positive when sites at that distance have similar values, near the dotted line when they are unrelated. Filled points are significant (5%, Bonferroni over the classes in order). Step 5 shows the same test after the correction.",
+  map = "Where the high (yellow) and low (dark) values are. A smooth gradient or large patches point to a large-scale structure; a salt-and-pepper map to little spatial dependence.",
+  series = "The series over time (in space-time, a sample of sites in grey and their mean in black) with two trends: the linear one (red, dashed), whose R2 classifies a variable as a trend regime, and the cubic one (blue), the trend the menu below would remove.",
+  acf = "The ACF is the correlation of the series with itself k steps later: bars beyond the dashed band are significant, and a slow decay means persistence. The periodogram shows the power of each period: a clear peak marks a cycle.")
 
 # A table for the screen: numbers with 3 significant digits, TRUE/FALSE as yes/no, and
 # missing values (a stability not computed, a test that does not apply) left blank.
@@ -289,6 +351,67 @@ run_app <- function(launch.browser = interactive()) {
   terms <- c(if (trend) list(term_trend()), if (cycle) list(term_cycle(period = if (is.null(period) || is.na(period)) NULL else period)),
              if (mem) list(term_mem(W = W)), if (time_mem) list(term_mem(margin = "time")), if (aem) list(term_aem(direction)))
   if (!length(terms)) NULL else do.call(basis_menu, terms)
+}
+
+# The neighbourhood graphs of the menu, with how each links the sites.
+.graph_choices <- c("Distance-based (dbMEM, the default)" = "dbmem", "Best of the three graphs below, chosen from the data" = "auto",
+                    "Delaunay triangulation" = "del", "Gabriel graph" = "gab", "Relative neighbourhood graph" = "rel")
+.graph_help <- c(
+  dbmem = "Sites closer than a threshold are neighbours. The threshold is the longest link needed to keep every site connected (the longest edge of the minimum spanning tree). This is the graph of the automatic choice.",
+  auto = "Tries the Delaunay, Gabriel and relative-neighbourhood graphs, each with equal or distance-decreasing weights, and keeps the one whose maps explain the group best (adjusted R2); the test is made stricter for the six tries (Bauman et al. 2018). The figure shows the Delaunay graph.",
+  del = "Each site is linked to its natural neighbours (the triangles with no other site inside their circle): many links, some long ones at the edges of the area.",
+  gab = "The Delaunay links whose circle with the link as diameter holds no other site: fewer and shorter links.",
+  rel = "Two sites are linked only when no third site is closer to both: the sparsest of the three, mostly the nearest neighbours.")
+
+# The links (pairs of sites, i < j) of a neighbourhood graph of the menu.
+.menu_graph_links <- function(coords, W = "dbmem") {
+  coords <- as.matrix(coords)
+  g <- sub("_.*$", "", W)
+  nb <- switch(if (g == "auto") "del" else g,
+    dbmem = spdep::dnearneigh(coords, 0, adespatial::give.thresh(stats::dist(coords)) * (1 + 1e-9)),
+    del = spdep::tri2nb(coords),
+    gab = spdep::graph2nb(spdep::gabrielneigh(coords), sym = TRUE),
+    rel = spdep::graph2nb(spdep::relativeneigh(coords), sym = TRUE),
+    stop("Unknown graph: ", W, call. = FALSE))
+  e <- do.call(rbind, lapply(seq_along(nb), function(i) { j <- nb[[i]][nb[[i]] > i]; if (length(j)) cbind(i, j) }))
+  if (is.null(e)) matrix(integer(0), 0, 2) else unname(e)
+}
+
+# The sites and the links of the graph chosen for the MEM (the Delaunay graph when only
+# the directional maps are ticked), with an arrow the way a directional process flows.
+.draw_menu_graph <- function(coords, W = "dbmem", direction = NULL, cex = 1, pt = 1, max_sites = 3000) {
+  coords <- as.matrix(coords); lab <- .axis_names(coords)
+  graphics::par(cex = cex, mar = c(4.2, 4.2, 2.5, 1))
+  draw_links <- nrow(coords) <= max_sites
+  title <- if (!draw_links) sprintf("%d sites (too many to draw the links)", nrow(coords)) else
+    paste("Links:", names(.graph_choices)[match(if (W == "auto") "del" else W, .graph_choices)])
+  graphics::plot(coords, type = "n", asp = 1, xlab = lab[1], ylab = lab[2], main = title, cex.main = 0.9)
+  if (draw_links) {
+    e <- .menu_graph_links(coords, W)
+    graphics::segments(coords[e[, 1], 1], coords[e[, 1], 2], coords[e[, 2], 1], coords[e[, 2], 2], col = "grey65", lwd = 0.7)
+  }
+  graphics::points(coords, pch = 19, cex = 0.5 * pt, col = "grey20")
+  if (!is.null(direction) && is.finite(direction)) {
+    th <- direction * pi / 180
+    ctr <- colMeans(apply(coords, 2, range))
+    len <- 0.2 * sqrt(sum(apply(coords, 2, function(v) diff(range(v)))^2))
+    graphics::arrows(ctr[1] - len * cos(th), ctr[2] - len * sin(th), ctr[1] + len * cos(th), ctr[2] + len * sin(th),
+                     lwd = 4, length = 0.15, col = "#c0392b")
+    graphics::mtext(sprintf("red arrow: the process flows toward %g degrees", direction), side = 3, line = 0.2, cex = 0.75 * cex)
+  }
+  invisible(NULL)
+}
+
+# A menu in words, for the screen.
+.menu_words <- function(m, family) {
+  if (is.null(m)) return("automatic choice")
+  one <- function(t) switch(t$kind,
+    trend = "trend",
+    cycle = if (is.null(t$period)) "cycle (period from the periodogram)" else sprintf("cycle of period %g", t$period),
+    mem = if (identical(t$margin, "time") || (is.null(t$margin) && family == "temporal")) "temporal MEM" else
+      sprintf("spatial MEM (%s)", tolower(sub(" \\(.*$", "", c(names(.graph_choices)[match(sub("_.*$", "", t$W), .graph_choices)], t$W)[1]))),
+    aem = sprintf("directional maps toward %g degrees", t$direction))
+  paste(vapply(m, one, ""), collapse = " + ")
 }
 
 # The R code that reproduces what was done in the app.
@@ -355,7 +478,7 @@ run_app <- function(launch.browser = interactive()) {
     shiny::titlePanel("depprep: dependence-aware preprocessing"),
     shiny::navlistPanel(id = "step", widths = c(2, 10),
       shiny::tabPanel("1. Data",
-        shiny::p(class = "help", "Load a CSV with one row per observation. Mark the columns of the positions (coordinates in km or m, or longitude and latitude in degrees); the other numeric columns are the variables."),
+        shiny::p(class = "help", "Load a CSV with one row per observation. Mark the columns of the positions (longitude and latitude in decimal degrees, the time, the site); the other numeric columns are the variables."),
         shiny::fileInput("file", "CSV file", accept = ".csv"),
         shiny::actionButton("example", "Use example data (spatial simulation)"),
         shiny::radioButtons("family", "Data", c("Spatial" = "spatial", "Temporal" = "temporal", "Space-time" = "spatiotemporal"), inline = TRUE),
@@ -375,13 +498,16 @@ run_app <- function(launch.browser = interactive()) {
         shiny::actionButton("diagnose", "Diagnose"),
         shiny::div(style = "overflow-x:auto", shiny::tableOutput("signatures")),
         shiny::downloadButton("dl_diag", "Diagnosis (CSV)"),
-        shiny::fluidRow(shiny::column(4, shiny::uiOutput("plot_var"), shiny::p(class = "help", "Text size, size and format of the figures: Figures, in step 5.")),
-                        shiny::column(8, .figure_ui("diag_plot", 300))),
+        shiny::h4("Plots of each variable"),
+        shiny::fluidRow(shiny::column(4, shiny::uiOutput("plot_var"), shiny::uiOutput("diag_help"),
+                                      shiny::p(class = "help", "Text size, size and format of the figures: Figures, in step 5.")),
+                        shiny::column(8, .figure_ui("diag_plot", 360))),
         shiny::h4("Change a regime by hand"),
         shiny::uiOutput("override_ui"),
         shiny::h4("Menu of structures for a group"),
-        shiny::p(class = "help", "Restrict the structures a group's basis is built from; the parameters are still searched with the usual limits (tests, k/n cap). Empty: the automatic choice."),
+        shiny::p(class = "help", "The basis of a group holds the large-scale structures its variables share, and the correction removes them. By default they are chosen automatically from the group's regime. When you know the system (the period of a cycle, the direction of a current), tick the structures it can have: the basis is then built only from them. The data still decide how many terms enter: each term is tested by permutation and the size of the basis is capped (k/n), so a ticked structure the variables do not follow is left out. In space-time, the spatial and the temporal structures ticked are combined (their products)."),
         shiny::uiOutput("menu_ui"),
+        shiny::strong("Menus set"),
         shiny::verbatimTextOutput("menus")),
       shiny::tabPanel("4. Correction",
         shiny::uiOutput("correct_help"),
@@ -451,8 +577,8 @@ run_app <- function(launch.browser = interactive()) {
     used <- unlist(c(if (input$family != "temporal") sel[c("x", "y")], if (input$family != "spatial") sel["time"],
                      if (input$family == "spatiotemporal") sel["site"]))
     shiny::tagList(
-      if (input$family != "temporal") shiny::fluidRow(shiny::column(3, shiny::selectInput("x", "x column (km, m or longitude)", nm, sel$x)),
-                                                   shiny::column(3, shiny::selectInput("y", "y column (km, m or latitude)", nm, sel$y))),
+      if (input$family != "temporal") shiny::fluidRow(shiny::column(3, shiny::selectInput("x", "x column (longitude)", nm, sel$x)),
+                                                   shiny::column(3, shiny::selectInput("y", "y column (latitude)", nm, sel$y))),
       if (input$family != "spatial") shiny::fluidRow(shiny::column(3, shiny::selectInput("time", "time column", nm, sel$time)),
         if (input$family == "spatiotemporal") shiny::column(3, shiny::selectInput("site", "site column", nm, sel$site))),
       shiny::selectizeInput("variables", "Variables", num_cols(), setdiff(num_cols()[!.coord_like(num_cols())], used), multiple = TRUE))
@@ -498,10 +624,15 @@ run_app <- function(launch.browser = interactive()) {
     shiny::req(rv$grouping, rv$sig)
     .format_table(diagnosis_table(rv$sig, rv$grouping))
   })
-  output$plot_var <- shiny::renderUI({ shiny::req(input$variables); shiny::selectInput("pvar", "Plot of", input$variables) })
-  figure("diag_plot", function() paste0("diagnosis_", input$pvar), function(cex, pt) {
-    d <- dat(); shiny::req(input$pvar %in% colnames(d$X))
-    .draw_diagnosis(d, input$pvar, cex, pt)
+  output$plot_var <- shiny::renderUI({
+    shiny::req(input$variables)
+    shiny::tagList(shiny::selectInput("pvar", "Variable", input$variables, shiny::isolate(input$pvar)),
+                   shiny::radioButtons("pwhat", "Plot", .diagnosis_plots(input$family)))
+  })
+  output$diag_help <- shiny::renderUI({ shiny::req(input$pwhat); shiny::p(class = "help", .diagnosis_plot_help[[input$pwhat]]) })
+  figure("diag_plot", function() paste0("diagnosis_", input$pwhat, "_", input$pvar), function(cex, pt) {
+    d <- dat(); shiny::req(input$pvar %in% colnames(d$X), input$pwhat %in% .diagnosis_plots(d$family))
+    .draw_diagnosis(d, input$pvar, cex, pt, input$pwhat)
   })
   types_of <- function(f) switch(f, spatial = c("isotropic", "anisotropic", "none"), temporal = c("ar", "seasonal", "trend", "none"),
     spatiotemporal = c("temporal_common", "spatial_only", "moving", "separable_seasonal", "separable_ar1", "none"))
@@ -523,14 +654,64 @@ run_app <- function(launch.browser = interactive()) {
   output$menu_ui <- shiny::renderUI({
     shiny::req(rv$grouping)
     gs <- setdiff(unique(rv$grouping$group), "none")
+    sp <- input$family != "temporal"; tm <- input$family != "spatial"
+    # a structure: its box, what it is, and its settings
+    term <- function(id, label, help, ...) shiny::div(style = "margin-bottom:.8rem",
+      shiny::checkboxInput(id, shiny::strong(label)), shiny::div(class = "help", style = "margin:-.5rem 0 .3rem 1.4rem", help),
+      shiny::div(style = "margin-left:1.4rem", ...))
+    trend_help <- if (sp && tm) "A smooth surface of the coordinates and a smooth curve of time: broad gradients across the area and over the whole period." else
+      if (sp) "A smooth surface of the coordinates (x, y, x2, xy, y2): one broad gradient across the area, such as from the coast to the open ocean." else
+      "A smooth curve of time (a cubic polynomial): a long-term rise or fall over the whole period."
     shiny::tagList(
-      shiny::fluidRow(shiny::column(3, shiny::selectInput("mn_group", "Group", gs)),
-                  shiny::column(2, shiny::checkboxInput("mn_trend", "Trend")),
-                  if (input$family != "spatial") shiny::column(2, shiny::checkboxInput("mn_cycle", "Cycle"), shiny::numericInput("mn_period", "Period (empty: searched)", NA)),
-                  if (input$family != "temporal") shiny::column(2, shiny::checkboxInput("mn_mem", "MEM"), shiny::selectInput("mn_W", "Graph", c("dbmem", "auto", "del", "gab", "rel"))),
-                  if (input$family != "spatial") shiny::column(1, shiny::checkboxInput("mn_tmem", "Temporal MEM")),
-                  if (input$family != "temporal") shiny::column(2, shiny::checkboxInput("mn_aem", "Directional (AEM)"), shiny::numericInput("mn_dir", "Direction (degrees)", 0))),
+      shiny::fluidRow(shiny::column(4, shiny::selectInput("mn_group", "Group", gs)), shiny::column(8, shiny::uiOutput("mn_group_info"))),
+      shiny::fluidRow(
+        shiny::column(if (sp) 6 else 12,
+          term("mn_trend", "Trend", trend_help),
+          if (tm) term("mn_cycle", "Cycle",
+            "Sine and cosine waves of one period, such as 12 for an annual cycle in monthly data. For a regular, repeating cycle.",
+            shiny::numericInput("mn_period", "Period, in time steps (empty: taken from the periodogram of the group's variables)", NA, width = "100%")),
+          if (tm) term("mn_tmem", "Temporal MEM (Moran's eigenvector maps of time)",
+            "Waves along time, from slow to fast, without assuming a period: for persistence and irregular fluctuations at several time scales."),
+          if (sp) term("mn_mem", "Spatial MEM (Moran's eigenvector maps)",
+            "Map patterns built from which sites are neighbours, from broad (a few large patches) to fine (many small patches); only the patterns the group's variables follow are kept. For patchy structure at several scales rather than one gradient.",
+            shiny::selectInput("mn_W", "Neighbourhood graph: which sites count as neighbours", .graph_choices, width = "100%"),
+            shiny::uiOutput("mn_graph_help")),
+          if (sp) term("mn_aem", "Directional maps (AEM, asymmetric eigenvector maps)",
+            "Patterns that spread one way only: upstream sites influence downstream ones, not the reverse. For a current, a river plume or wind transport. Built on the Delaunay graph, oriented by the direction.",
+            shiny::numericInput("mn_dir", "Direction the process flows toward, in degrees counter-clockwise from east (0 east, 90 north, 180 west, 270 south)", 0, width = "100%"),
+            shiny::uiOutput("mn_dir_help"))),
+        if (sp) shiny::column(6, .figure_ui("menu_graph", 380),
+          shiny::p(class = "help", "The sites and the links of the graph chosen for the spatial MEM (the Delaunay graph when only the directional maps are ticked). With the directional maps ticked, the red arrow is the way the process flows."))),
       shiny::actionButton("mn_apply", "Set the menu of this group"), shiny::actionButton("mn_clear", "Back to automatic"))
+  })
+  output$mn_group_info <- shiny::renderUI({
+    shiny::req(rv$grouping, input$mn_group)
+    g <- rv$grouping[rv$grouping$group == input$mn_group, ]
+    per <- attr(rv$grouping, "period")[input$mn_group]
+    auto <- tryCatch(.menu_words(.menu_of_type(g$group_type[1], if (is.null(per) || is.na(per)) NULL else unname(per)), input$family),
+                     error = function(e) "the structures of its regime")
+    shiny::div(class = "ok", sprintf("Variables: %s. Regime: %s. Automatic choice for this regime: %s. Set now: %s.",
+                                    paste(g$variable, collapse = ", "), g$group_type[1], auto, .menu_words(rv$menus[[input$mn_group]], input$family)))
+  })
+  output$mn_graph_help <- shiny::renderUI({ shiny::req(input$mn_W); shiny::div(class = "help", .graph_help[[input$mn_W]]) })
+  output$mn_dir_help <- shiny::renderUI({
+    shiny::req(rv$sig, rv$grouping, input$mn_group)
+    v <- rv$grouping$variable[rv$grouping$group == input$mn_group]
+    s <- rv$sig[rv$sig$variable %in% v, , drop = FALSE]
+    med <- function(x) if (is.null(x) || all(is.na(x))) NA else stats::median(x, na.rm = TRUE)
+    # only the directions of a clear anisotropy or movement (the thresholds of the regimes)
+    th <- default_thresholds()
+    an <- if (isTRUE(med(s$aniso_ratio) >= th$aniso_ratio)) med(s$aniso_direction) else NA
+    sh <- if (isTRUE(med(s$shift_indicator) >= th$shift)) med(s$shift_direction) else NA
+    hints <- c(if (!is.na(an)) sprintf("the longest range of the variogram is along the axis %.0f / %.0f degrees (the anisotropy direction of the table, which is clockwise from north, in this convention)",
+                                       (90 - an) %% 180, (90 - an) %% 180 + 180),
+               if (!is.na(sh)) sprintf("the pattern moves toward about %.0f degrees (shift direction)", sh %% 360))
+    if (length(hints)) shiny::div(class = "help", paste0("Hints from the diagnosis of this group: ", paste(hints, collapse = "; "), "."))
+  })
+  figure("menu_graph", function() paste0("graph_", input$mn_W), function(cex, pt) {
+    d <- dat(); shiny::req(d$family != "temporal", input$mn_W)
+    .draw_menu_graph(d$coords, if (isTRUE(input$mn_mem) || !isTRUE(input$mn_aem)) input$mn_W else "del",
+                     if (isTRUE(input$mn_aem)) input$mn_dir, cex, pt)
   })
   shiny::observeEvent(input$mn_apply, {
     m <- tryCatch(.app_menu(trend = isTRUE(input$mn_trend), cycle = isTRUE(input$mn_cycle), period = input$mn_period, mem = isTRUE(input$mn_mem),
@@ -540,7 +721,10 @@ run_app <- function(launch.browser = interactive()) {
     menus <- rv$menus; menus[[input$mn_group]] <- m; rv$menus <- Filter(Negate(is.null), menus)
   })
   shiny::observeEvent(input$mn_clear, { menus <- rv$menus; menus[[input$mn_group]] <- NULL; rv$menus <- menus })
-  output$menus <- shiny::renderPrint({ if (!length(rv$menus)) cat("All groups: automatic choice.\n") else for (g in names(rv$menus)) { cat(g, ": "); print(rv$menus[[g]]) } })
+  output$menus <- shiny::renderPrint({
+    if (!length(rv$menus)) cat("All groups: automatic choice.\n") else
+      for (g in names(rv$menus)) cat(sprintf("%s: %s\n   %s\n", g, .menu_words(rv$menus[[g]], input$family), .menu_code(rv$menus[[g]])))
+  })
   settings <- shiny::reactive({
     d <- dat()
     mode <- if (input$mode == "default") (if (d$family == "spatiotemporal") "whiten" else "conditional") else input$mode
