@@ -441,16 +441,7 @@ position of the observation; every other numeric column is a variable. Column na
 free (you mark the position columns in step 1). The three layouts (the values below are
 illustrative):
 
-**Spatial** (one map): one row per site, with its two coordinates, either in km (or m)
-of a projected system or as longitude and latitude in degrees.
-
-| x_km | y_km | chl | sst | kd490 | poc |
-| --- | --- | --- | --- | --- | --- |
-| 412.5 | 9876.0 | 1.84 | 28.31 | 0.21 | 210.4 |
-| 440.3 | 9876.0 | 1.12 | 28.45 | 0.15 | 168.9 |
-| 412.5 | 9903.8 | 2.07 | 28.22 | 0.24 | 231.0 |
-
-or
+**Spatial** (one map): one row per site, with its longitude and latitude in degrees.
 
 | lon | lat | chl | sst | kd490 | poc |
 | --- | --- | --- | --- | --- | --- |
@@ -469,12 +460,12 @@ or
 **Space-time** (a series at every site): one row per site and time, with a site
 identifier, the site's coordinates (repeated on each of its rows) and the time.
 
-| site | x_km | y_km | time | chl | sst | kd490 | poc |
+| site | lon | lat | time | chl | sst | kd490 | poc |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 412.5 | 9876.0 | 1 | 1.84 | 28.31 | 0.21 | 210.4 |
-| 1 | 412.5 | 9876.0 | 2 | 1.90 | 28.40 | 0.22 | 214.1 |
-| 2 | 440.3 | 9876.0 | 1 | 1.12 | 28.45 | 0.15 | 168.9 |
-| 2 | 440.3 | 9876.0 | 2 | 1.20 | 28.51 | 0.16 | 172.3 |
+| 1 | -48.125 | 1.375 | 1 | 1.84 | 28.31 | 0.21 | 210.4 |
+| 1 | -48.125 | 1.375 | 2 | 1.90 | 28.40 | 0.22 | 214.1 |
+| 2 | -47.875 | 1.375 | 1 | 1.12 | 28.45 | 0.15 | 168.9 |
+| 2 | -47.875 | 1.375 | 2 | 1.20 | 28.51 | 0.16 | 172.3 |
 
 Rules:
 
@@ -482,14 +473,13 @@ Rules:
   coordinates or the time (fill or drop them before; gaps are not supported yet).
 - **Time is a number**: a month counter (1, 2, 3, ...) or a decimal year (2015.25), not a
   date text such as "2015-04". Equal steps are expected.
-- **Coordinates in km (or m) or in degrees.** Projected coordinates (for example UTM)
-  work anywhere. Longitude and latitude in degrees work near the equator: they treat a
-  degree of longitude as a degree of latitude, while it is shorter by a factor of
-  cos(latitude), only 1.2% at 9 degrees (the north of the Foz do Amazonas basin). The app
-  shows that difference, and asks you to project the coordinates when it exceeds 2%
-  (beyond about 11 degrees of latitude). If the file has both pairs, mark the one you
-  want; the app leaves columns named like coordinates (`x`, `y`, `lon`, `lat`, `x_km`,
-  `easting`, ...) out of the variables it proposes.
+- **Coordinates as longitude and latitude in degrees.** They treat a degree of
+  longitude as a degree of latitude, while it is shorter by a factor of cos(latitude):
+  only 1.2% at 9 degrees (the north of the Foz do Amazonas basin). The app shows that
+  difference; beyond about 11 degrees of latitude (more than 2%) project the coordinates
+  first (for example to UTM, in km) and use them in place of lon and lat. The app leaves
+  columns named like coordinates (`lon`, `lat`, `x`, `y`, ...) out of the variables it
+  proposes.
 - **Space-time needs a complete grid**: every site has a row at every time, once.
 - Text columns (names, dates as text, labels) are ignored as variables; you can keep them
   in the file.
@@ -506,7 +496,7 @@ They are built from monthly Level-3 satellite fields of the marine Foz do Amazon
 
 | File | Layout | Rows | Columns |
 | --- | --- | --- | --- |
-| `foz_ocean_map.csv` | spatial | 544 cells | the cell centres twice, `x_km`, `y_km` (SIRGAS 2000 / Brazil Mercator, EPSG:5641) and `lon`, `lat` (degrees), then the mean of each variable over its cloud-free months |
+| `foz_ocean_map.csv` | spatial | 544 cells | `lon`, `lat` (cell centres, degrees), then the mean of each variable over its cloud-free months |
 | `foz_ocean_series.csv` | temporal | 79 months | `month` (text, ignored as a variable), `time` (1 to 79), then the basin mean of each variable in that month |
 | `foz_ocean_sources.csv` | — | 5 variables | name, unit, ERDDAP dataset, provider and licence of each variable |
 
@@ -524,14 +514,14 @@ which will work on every cell and month.
 In the app, download a file (for example
 [foz_ocean_map.csv](https://raw.githubusercontent.com/gfonseca-unifesp/depprep/main/inst/extdata/foz_ocean_map.csv)
 or [foz_ocean_series.csv](https://raw.githubusercontent.com/gfonseca-unifesp/depprep/main/inst/extdata/foz_ocean_series.csv))
-and load it in step 1, marking `x_km` and `y_km` or `lon` and `lat` (spatial; the
-cells lie between the equator and 9 N, so both work), or `time` (temporal). In code:
+and load it in step 1, marking `lon` and `lat` (spatial; the cells lie between the
+equator and 9 N) or `time` (temporal). In code:
 
 ```r
 library(depprep)
 map <- read.csv(system.file("extdata", "foz_ocean_map.csv", package = "depprep"))
 X   <- as.matrix(map[, c("chl", "par", "poc", "sst", "wind_x")])
-xy  <- as.matrix(map[, c("x_km", "y_km")])         # or map[, c("lon", "lat")]
+xy  <- as.matrix(map[, c("lon", "lat")])
 gr  <- group_regimes(diagnose_variables(X, coords = xy))
 cr  <- correct(X, gr, coords = xy)                 # about half a minute
 v   <- verify(cr, X, coords = xy)
