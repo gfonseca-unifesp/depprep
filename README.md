@@ -323,6 +323,41 @@ the warning of signal at the scale of the basis (question Q3): when much of the
 association between variables lived at the scale of the basis, classes that are regions
 or periods would be removed by the correction.
 
+### The warning of signal at the scale of the basis (Q3)
+
+The correction removes what varies at the scale of its basis. When the classes you look
+for are regions or periods, they live at that scale too and are removed with the
+dependence. `verify()` measures how much of the association between variables was
+carried by the removed part:
+
+```
+Q3 statistic = mean over all pairs of variables of |cov_large| / (sd_x sd_y)
+```
+
+where `cov_large` is the covariance of the two variables' parts on the basis. The warning
+(`v$q3$warning`) is raised when the statistic exceeds the threshold of the data family:
+
+| Data | Threshold | Validated on new seeds (warnings without / with contiguous classes) | At the size of the case study |
+| --- | --- | --- | --- |
+| Spatial | 0.16 | at most 1.2% / at least 98.8% (stage 7 grid) | n = 628 sites: 0% / 97-99% |
+| Temporal | 0.19 | at most 0.3% / 99.7% (stage 7 grid) | T = 93 months: 0-2% / 99-100% |
+| Space-time | 0.13 | 0% / 99% (stage 7 grid) | 628 sites x 93 months: 0% / 100% |
+
+The thresholds differ by family because the statistic grows with the size of the basis
+even without classes: the large-scale parts of independent autocorrelated variables are
+correlated by chance, more so in short series. Each threshold is the midpoint between the
+97.5th percentile of the truths without contiguous classes and the 5th percentile of the
+contiguous truth (`analysis/07d_q3_recalibration.R`), checked at the size of the real
+case by `analysis/08c_q3_size_check.R` (criterion: at most 5% of warnings without
+contiguous classes, at least 90% with them). A statistic normalised by a reference of
+independent surrogates (`analysis/08a_q3_reference_pilot.R`) was tried and not adopted:
+it separated the truths worse, because contiguous classes also make each variable more
+autocorrelated, so the reference rises with them and hides the signal. The threshold can be set with `q3_threshold`.
+
+When the warning fires, the correlations are not wrong: much of the association lived at
+the scale of the basis. If the classes you seek are regions or periods, analyse the raw
+data, or use clustering constrained by contiguity (section 11).
+
 `correct()` has three modes: `"conditional"` (residuals on the group bases),
 `"whiten"` (the observations are whitened with each group's estimated covariance) and
 `"scale"` (one correlation matrix per band of scales). What the simulations show so far:
