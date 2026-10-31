@@ -276,12 +276,15 @@ of two groups for the pairs of variables across them.
 ## 9. Quick start: correcting and verifying
 
 ```r
-gr <- group_regimes(diagnose_variables(sim))
+sig <- diagnose_variables(sim)
+gr <- group_regimes(sig)
+diagnosis_table(sig, gr)                   # what the diagnosis found, variable by variable
 cr <- correct(sim, gr)                     # the defaults below
 cr$R                                       # corrected correlation matrix (for PCA)
 head(cr$X)                                 # corrected data (for k-means, SOM, MDS, HDBSCAN)
 v <- verify(cr, sim)                       # what was removed and what was kept
-report_correction(cr, sim, v, file = "report.html")   # one HTML page for the user
+report_correction(cr, sim, v, file = "report.html",    # one HTML page for the user
+                  signature = sig, grouping = gr)
 correct(sim, gr, scope = "groups")         # one basis per group, unions across groups
 run_app()                                  # the same workflow, point and click
 ```
@@ -321,7 +324,20 @@ correlation changed (Delta R), the part of each correlation carried by the large
 the local Moran's I of the corrected variables (where structure is left, in space), and
 the warning of signal at the scale of the basis (question Q3): when much of the
 association between variables lived at the scale of the basis, classes that are regions
-or periods would be removed by the correction.
+or periods would be removed by the correction. The same Moran correlograms, local
+Moran's I and (in time) Ljung-Box tests are given for the raw data
+(`correlograms_before`, `lisa_before`), so that what the diagnosis saw can be compared
+with what the correction left.
+
+### Exploring the diagnosis before the correction
+
+Everything the diagnosis computed is kept for the user to explore:
+`diagnosis_table(sig, gr)` puts each variable's signature (Moran's I and its p-value,
+the variogram and its range, nugget and anisotropy in space; the lag-1 autocorrelation,
+the AR coefficient, the Ljung-Box test, the period and its strength and the trend in
+time) beside its regime, group and stability. The report of `report_correction()` opens
+with this table, and the app shows it in step 3 and lets you download it, together with
+the local Moran's I before and after.
 
 ### The warning of signal at the scale of the basis (Q3)
 

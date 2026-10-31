@@ -7,9 +7,16 @@
   `correct()` search the parameters within the menu. Without a menu the
   bases are the same as before.
 * `verify()` gives the local Moran's I of the corrected variables (`lisa`), to see
-  where structure is left.
-* `report_correction()` writes one self-contained HTML page that explains a correction.
-* `run_app()` opens a point-and-click interface to the whole workflow.
+  where structure is left, and the same descriptions of the raw data before the
+  correction (`correlograms_before`, `lisa_before`, and the Ljung-Box test in time).
+* `diagnosis_table()` gathers what the diagnosis found for each variable (signature,
+  regime, group, stability) in one table to read or save.
+* `report_correction()` writes one self-contained HTML page that explains a correction,
+  opening with the diagnosis and showing every test before and after.
+* `run_app()` opens a point-and-click interface to the whole workflow; coordinates can
+  be projected or in degrees (near the equator), and the diagnosis and the local
+  Moran's I can be downloaded.
+* Example tables of the Foz do Amazonas ocean case in `inst/extdata/`.
 * The diagnosis, the bases and the correction stop with a clear message on missing
   values instead of filling them.
 * The Q3 warning of `verify()` uses one threshold per data family (amendment
