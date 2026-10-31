@@ -19,6 +19,7 @@ Roxygen: list(markdown = TRUE)
 Suggests: 
     ggplot2,
     knitr,
+    pkgload,
     quarto,
     rmarkdown,
     sf,

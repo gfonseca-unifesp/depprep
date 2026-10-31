@@ -17,7 +17,9 @@ correct(
   period = NULL,
   kn_max = 0.3,
   seed = 1L,
-  menu = NULL
+  menu = NULL,
+  cores = 1L,
+  sample_sites = 1
 )
 }
 \arguments{
@@ -58,6 +60,15 @@ under \code{scope = "variables"}, the cap of the union of the variables' bases.}
 every group, or a list of menus named by group (groups without one keep the
 automatic choice). Under \code{scope = "global"} with a list, each group's basis is built
 with its menu and the global basis is their union. Not used by the scale mode.}
+
+\item{cores}{Number of processes that build the bases at the same time (the bases of
+the groups, and the basis of each variable for the data matrix). Each basis has its
+own seed, so the result is the same with any number of cores. Forked processes on
+Linux and macOS, a socket cluster on Windows.}
+
+\item{sample_sites}{Share of the sites on which the terms of every basis are selected
+(spatial and spatio-temporal data), passed to \code{\link[=build_group_basis]{build_group_basis()}}; 1 (the
+default) uses all of them. Experimental (decision D25).}
 }
 \value{
 An object of class \code{depprep_corrected}: a list with \code{R}, \code{R_pairwise}

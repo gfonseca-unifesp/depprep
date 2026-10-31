@@ -254,3 +254,21 @@ test_that("by default the data matrix holds each variable on a basis selected on
   }
   expect_equal(cr$X[, 4], s$X[, 4] - mean(s$X[, 4]), ignore_attr = TRUE)   # no dependence: centred only
 })
+
+test_that("the bases built on several cores are the same as on one", {
+  skip_on_cran()
+  g <- sim_groups(sim_group("a", 3, "exponential", range = 0.5), sim_group("b", 2, "exponential", range = 0.15),
+                  sim_group("none", 2, "none"))
+  s <- sim_spatial(120, g, seed = 5)
+  gr <- group_regimes(diagnose_variables(s))
+  one <- correct(s, gr, scope = "groups", seed = 3)
+  two <- correct(s, gr, scope = "groups", seed = 3, cores = 2)
+  expect_identical(two$R, one$R)
+  expect_identical(two$X, one$X)
+  expect_identical(two$bases, one$bases)
+  expect_identical(two$variable_bases, one$variable_bases)
+  glob <- correct(s, gr, scope = "global", seed = 3)
+  expect_identical(correct(s, gr, scope = "global", seed = 3, cores = 2)$bases, glob$bases)
+  expect_identical(depprep:::.lapply_cores(1:3, function(i) i^2, 2), list(1, 4, 9))
+  expect_error(depprep:::.lapply_cores(1:2, function(i) stop("boom ", i), 2), "boom")
+})

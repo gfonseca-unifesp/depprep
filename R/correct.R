@@ -82,6 +82,13 @@
 #'   every group, or a list of menus named by group (groups without one keep the
 #'   automatic choice). Under `scope = "global"` with a list, each group's basis is built
 #'   with its menu and the global basis is their union. Not used by the scale mode.
+#' @param cores Number of processes that build the bases at the same time (the bases of
+#'   the groups, and the basis of each variable for the data matrix). Each basis has its
+#'   own seed, so the result is the same with any number of cores. Forked processes on
+#'   Linux and macOS, a socket cluster on Windows.
+#' @param sample_sites Share of the sites on which the terms of every basis are selected
+#'   (spatial and spatio-temporal data), passed to [build_group_basis()]; 1 (the
+#'   default) uses all of them. Experimental (decision D25).
 #' @return An object of class `depprep_corrected`: a list with `R`, `R_pairwise`
 #'   (before the projection), `adjustment`, `X` (residuals or whitened data; `NULL` in
 #'   scale mode), `R_scale`, `r2_scale`, `p_scale`, `bands` and `scalogram` (scale
@@ -107,7 +114,7 @@
 #' @export
 correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases = NULL,
                     mode = NULL, scope = NULL, data_basis = c("own", "union"), period = NULL,
-                    kn_max = 0.3, seed = 1L, menu = NULL) {
+                    kn_max = 0.3, seed = 1L, menu = NULL, cores = 1L, sample_sites = 1) {
   if (inherits(X, "depprep_sim")) {
     d <- .data_parts(X); X <- d$X; coords <- d$coords; time <- d$time; index <- d$index
   }
@@ -144,6 +151,9 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   menu_of <- function(g) if (is.null(menu)) NULL else if (inherits(menu, "depprep_menu")) menu else menu[[g]]
   args <- switch(family, spatial = list(coords = coords), temporal = list(time = time),
                  spatiotemporal = list(coords = coords, index = index))
+  if (sample_sites < 1 && family != "temporal") args$sample_sites <- sample_sites
+  pool <- .pool(cores)                                     # processes made on first use, closed on exit
+  on.exit(.pool_close(pool), add = TRUE)
   n <- nrow(X)
   warn <- character(0)
   parts <- NULL                                            # bases before any union (for the scale mode)
@@ -157,19 +167,19 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     if (scope == "global") {
       if (is.null(bases)) {
         parts <- if (is.null(menu)) {
-          lapply(types, function(t) do.call(build_group_basis, c(list(X_group = X[, dep, drop = FALSE], type = t,
-            period = .period_of(t, NULL, period, grouping), seed = seed), args)))
+          .lapply_cores(types, function(t) do.call(build_group_basis, c(list(X_group = X[, dep, drop = FALSE], type = t,
+            period = .period_of(t, NULL, period, grouping), seed = seed), args)), pool)
         } else if (inherits(menu, "depprep_menu")) {
           list(do.call(build_group_basis, c(list(X_group = X[, dep, drop = FALSE], menu = menu, seed = seed), args)))
-        } else lapply(setdiff(unique(grp), "none"), function(g) do.call(build_group_basis, c(list(X_group = X[, grp == g, drop = FALSE],
-          type = gtype[[g]], period = .period_of(gtype[[g]], g, period, grouping), menu = menu_of(g), seed = seed), args)))
+        } else .lapply_cores(setdiff(unique(grp), "none"), function(g) do.call(build_group_basis, c(list(X_group = X[, grp == g, drop = FALSE],
+          type = gtype[[g]], period = .period_of(gtype[[g]], g, period, grouping), menu = menu_of(g), seed = seed), args)), pool)
         bases <- list(global = suppressWarnings(do.call(union_basis, c(parts, kn_max = kn_max))))
       }
       label <- "global"
     } else {
       variable_bases <- if (is.null(bases)) {
-        stats::setNames(lapply(which(dep), function(j) do.call(build_group_basis, c(list(X_group = X[, j, drop = FALSE],
-          type = vtype[j], period = .period_of(vtype[j], grp[j], period, grouping), menu = menu_of(grp[j]), seed = seed), args))),
+        stats::setNames(.lapply_cores(which(dep), function(j) do.call(build_group_basis, c(list(X_group = X[, j, drop = FALSE],
+          type = vtype[j], period = .period_of(vtype[j], grp[j], period, grouping), menu = menu_of(grp[j]), seed = seed), args)), pool),
           colnames(X)[dep])
       } else {
         if (!all(colnames(X)[dep] %in% names(bases))) {
@@ -192,10 +202,10 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   }
   groups <- setdiff(unique(grp), "none")
   if (is.null(bases)) {
-    bases <- stats::setNames(lapply(groups, function(g) {
+    bases <- stats::setNames(.lapply_cores(groups, function(g) {
       do.call(build_group_basis, c(list(X_group = X[, grp == g, drop = FALSE], type = gtype[[g]],
                                         period = .period_of(gtype[[g]], g, period, grouping), menu = menu_of(g), seed = seed), args))
-    }), groups)
+    }, pool), groups)
   }
   if (is.null(parts)) parts <- bases[groups]
   empty <- .as_basis(matrix(0, n, 0), "none", n, 0, character(0))
@@ -246,9 +256,9 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     # each variable on a basis selected on that variable alone (decisions D13 and D17), in
     # any mode: R keeps the mode's estimate, the data matrix keeps each variable's classes
     if (is.null(variable_bases) && !bases_given) {
-      variable_bases <- stats::setNames(lapply(which(grp0 != "none"), function(j) do.call(build_group_basis, c(list(
+      variable_bases <- stats::setNames(.lapply_cores(which(grp0 != "none"), function(j) do.call(build_group_basis, c(list(
         X_group = X[, j, drop = FALSE], type = vtype0[j], period = .period_of(vtype0[j], grp0[j], period, grouping),
-        menu = menu_of(grp0[j]), seed = seed + j), args))), colnames(X)[grp0 != "none"])
+        menu = menu_of(grp0[j]), seed = seed + j), args)), pool), colnames(X)[grp0 != "none"])
     }
     own <- function(j) if (grp0[j] == "none") empty else
       if (!is.null(variable_bases)) variable_bases[[colnames(X)[j]]] else basis_of(grp[j])   # bases given: use them
@@ -502,4 +512,44 @@ print.depprep_corrected <- function(x, ...) {
   wavelength <- 2 * pi * dt / acos(pmin(pmax(r1, -1), 1 - 1e-12))
   axis <- data.frame(term = colnames(cand), scale = wavelength)
   axis[order(-axis$scale), , drop = FALSE]
+}
+
+# A pool of `cores` processes for .lapply_cores(), made on first use and closed by
+# .pool_close(): forked processes where they exist; on Windows one socket cluster per
+# pool (its processes are slow to start) that loads this package (from its source folder
+# when it was loaded with pkgload, as in development).
+.pool <- function(cores = 1L) {
+  p <- new.env(parent = emptyenv())
+  p$cores <- max(1L, as.integer(cores)); p$cl <- NULL
+  p
+}
+.pool_close <- function(p) {
+  if (!is.null(p$cl)) parallel::stopCluster(p$cl)
+  p$cl <- NULL
+  invisible(NULL)
+}
+
+# lapply() over `x` with a pool (or a number of cores, for a pool used once). Every basis
+# carries its own seed (through .with_stream()), so the result does not depend on the
+# number of processes.
+.lapply_cores <- function(x, FUN, pool = 1L) {
+  if (!is.environment(pool)) { pool <- .pool(pool); on.exit(.pool_close(pool)) }
+  cores <- min(pool$cores, length(x))
+  if (cores <= 1L) return(lapply(x, FUN))
+  if (.Platform$OS.type != "windows") {
+    out <- parallel::mclapply(x, FUN, mc.cores = cores, mc.preschedule = FALSE)
+    bad <- vapply(out, inherits, TRUE, "try-error")
+    if (any(bad)) stop(conditionMessage(attr(out[[which(bad)[1]]], "condition")), call. = FALSE)
+    return(out)
+  }
+  if (is.null(pool$cl)) {
+    pool$cl <- parallel::makePSOCKcluster(pool$cores, setup_timeout = 600)
+    ns_path <- getNamespaceInfo(asNamespace("depprep"), "path")
+    dev <- isNamespaceLoaded("pkgload") && isTRUE(pkgload::is_dev_package("depprep"))
+    parallel::clusterCall(pool$cl, function(path, dev) {
+      if (dev) pkgload::load_all(path, quiet = TRUE, export_all = FALSE, helpers = FALSE) else loadNamespace("depprep")
+      NULL
+    }, ns_path, dev)
+  }
+  parallel::clusterApplyLB(pool$cl, x, FUN)
 }
