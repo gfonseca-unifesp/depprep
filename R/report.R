@@ -78,19 +78,8 @@ report_correction <- function(corrected, X, verification = NULL, file = "depprep
 
   if (!is.null(v)) {
     vv <- v$variables
-    tab <- data.frame(variable = vv$variable, group = vv$group, removed = signif(vv$removed, 3),
-                      autocor_before = signif(vv$autocor_before, 3), autocor_after = signif(vv$autocor_after, 3), stringsAsFactors = FALSE)
-    head_t <- c("Variable", "Group", "Removed", "Autocor. before", "Autocor. after")
-    if (family == "temporal") {
-      tab$lb_before <- signif(vv$lb_p_before, 3); tab$lb_after <- signif(vv$lb_p, 3)
-      head_t <- c(head_t, "Ljung-Box p before", "Ljung-Box p after")
-    } else {
-      tab$cp_before <- signif(vv$correlogram_p_before, 3); tab$cp_after <- signif(vv$correlogram_p, 3)
-      tab$lisa_before <- signif(vv$lisa_share_before, 3); tab$lisa_after <- signif(vv$lisa_share, 3)
-      head_t <- c(head_t, "Correlogram p before", "Correlogram p after", "LISA before", "LISA after")
-    }
-    tab$left <- vv$residual_structure
-    head_t <- c(head_t, "Structure left")
+    tab <- .before_after(v, family)
+    head_t <- attr(tab, "labels")
     sec <- c(sec, "<h2>What was removed from each variable</h2>",
              sprintf("<p>Share of the variance removed, %s before and after, %s and whether structure is left (tested against white noise with the same basis removed).</p>",
                      if (family == "temporal") "lag-1 autocorrelation" else "Moran's I (8 nearest neighbours)",
@@ -237,6 +226,27 @@ diagnosis_table <- function(signature, grouping = NULL) {
   }
   for (k in cols) out[[k]] <- if (is.numeric(s[[k]])) signif(s[[k]], 3) else s[[k]]
   out
+}
+
+# Each variable before and after the correction, from a verification: the variance
+# removed, the autocorrelation, the tests of structure (Moran correlogram and the share of
+# sites with local structure in space, Ljung-Box in time) and whether structure is left.
+# The readable column names are in attr(, "labels").
+.before_after <- function(v, family) {
+  vv <- v$variables
+  tab <- data.frame(variable = vv$variable, group = vv$group, removed = signif(vv$removed, 3),
+                    autocor_before = signif(vv$autocor_before, 3), autocor_after = signif(vv$autocor_after, 3), stringsAsFactors = FALSE)
+  labels <- c("Variable", "Group", "Removed", "Autocor. before", "Autocor. after")
+  if (family == "temporal") {
+    tab$lb_p_before <- signif(vv$lb_p_before, 3); tab$lb_p_after <- signif(vv$lb_p, 3)
+    labels <- c(labels, "Ljung-Box p before", "Ljung-Box p after")
+  } else {
+    tab$correlogram_p_before <- signif(vv$correlogram_p_before, 3); tab$correlogram_p_after <- signif(vv$correlogram_p, 3)
+    tab$lisa_before <- signif(vv$lisa_share_before, 3); tab$lisa_after <- signif(vv$lisa_share, 3)
+    labels <- c(labels, "Correlogram p before", "Correlogram p after", "LISA before", "LISA after")
+  }
+  tab$structure_left <- vv$residual_structure
+  structure(tab, labels = c(labels, "Structure left"))
 }
 
 .html_escape <- function(x) {

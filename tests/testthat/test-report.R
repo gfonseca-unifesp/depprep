@@ -34,6 +34,24 @@ test_that("report_correction() writes one self-contained HTML file", {
   expect_true(grepl("Diagnosis before the correction", ht, fixed = TRUE))
 })
 
+test_that(".before_after() lays out each variable's tests before and after, by family", {
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("none", 2, "none"))
+  s <- sim_spatial(120, g, seed = 2)
+  v <- verify(correct(s, stats::setNames(c("g1", "g1", "g1", "none", "none"), colnames(s$X)), seed = 1), s, nperm = 0)
+  b <- depprep:::.before_after(v, "spatial")
+  expect_identical(b$variable, colnames(s$X))
+  expect_identical(b$lisa_before, signif(v$variables$lisa_share_before, 3))
+  expect_identical(b$correlogram_p_after, signif(v$variables$correlogram_p, 3))
+  expect_length(attr(b, "labels"), ncol(b))
+  gt <- sim_groups(sim_group("a", 2, "ar1", phi = 0.8))
+  st <- sim_temporal(100, gt, seed = 1)
+  grt <- data.frame(variable = colnames(st$X), group = "g1", group_type = "ar")
+  class(grt) <- c("depprep_grouping", "data.frame"); attr(grt, "period") <- c(g1 = NA)
+  bt <- depprep:::.before_after(verify(correct(st, grt), st, nperm = 0), "temporal")
+  expect_true(all(c("lb_p_before", "lb_p_after") %in% names(bt)))
+  expect_false("lisa_before" %in% names(bt))
+})
+
 test_that("diagnosis_table() joins the signature of the family with the grouping", {
   g <- sim_groups(sim_group("long", 3, "matern", range = 0.5), sim_group("none", 2, "none"))
   s <- sim_spatial(100, g, seed = 1)
