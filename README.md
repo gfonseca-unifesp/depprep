@@ -70,6 +70,7 @@ from recorded seeds into `results/` on your machine.
 | `R/` | Package functions: simulation generators, diagnosis, grouping, bases and their menu, correction, verification, report and app |
 | `tests/testthat/` | Tests with known truth for every function |
 | `man/` | Function documentation (generated with roxygen2) |
+| `inst/extdata/` | Example tables of the Foz do Amazonas case study (section 10) |
 | `analysis/` | One script per project stage, numbered in the order they are run |
 | `results/` | Created by the scripts; not tracked by git |
 | `data/raw/` | Downloaded raw data; not tracked by git, never modified |
@@ -163,6 +164,8 @@ them and labelled.
 | --- | --- |
 | `analysis/08a_q3_reference_pilot.R` | Pilot of a Q3 statistic normalised by an independence reference that keeps each variable's autocorrelation |
 | `analysis/08b_menu_check.R` | Descriptive check of the menu of structures: known period, chosen neighbourhood graph, directional maps |
+| `analysis/08c_q3_size_check.R` | The Q3 thresholds checked at the size of the real case (93 months, 628 cells, 628 x 93) |
+| `analysis/08d_fza_example_tables.R` | The two example tables of the Foz do Amazonas ocean shipped in `inst/extdata/` |
 
 ## 5. Getting started
 
@@ -429,6 +432,48 @@ Rules:
 The same layouts work in code: `diagnose_variables()` takes the matrix of variables with
 `coords` (spatial), `time` (temporal), or `coords` of the sites plus `index` (a data
 frame with the `site` and `time` of each row, space-time).
+
+### Example with real data: the Foz do Amazonas ocean
+
+Two tables of the project's case study come with the package, in the layouts above.
+They are built from monthly Level-3 satellite fields of the marine Foz do Amazonas basin
+(0.25-degree cells, April 2015 to October 2021) by `analysis/08d_fza_example_tables.R`:
+
+| File | Layout | Rows | Columns |
+| --- | --- | --- | --- |
+| `foz_ocean_map.csv` | spatial | 544 cells | `x_km`, `y_km` (cell centres, SIRGAS 2000 / Brazil Mercator, EPSG:5641), then the mean of each variable over its cloud-free months |
+| `foz_ocean_series.csv` | temporal | 79 months | `month` (text, ignored as a variable), `time` (1 to 79), then the basin mean of each variable in that month |
+| `foz_ocean_sources.csv` | — | 5 variables | name, unit, ERDDAP dataset, provider and licence of each variable |
+
+The variables: `chl` (chlorophyll-a, mg m-3), `par` (photosynthetically available
+radiation, einstein m-2 day-1), `poc` (particulate organic carbon, mg m-3), `sst` (sea
+surface temperature by day, degree C) from Aqua MODIS (NASA GSFC OBPG), and `wind_x`
+(eastward wind, m s-1) from Metop ASCAT (NOAA ERD), all read from the NOAA CoastWatch
+ERDDAP server. They are free to use and redistribute; please cite the providers.
+
+They have no gaps because they are averages: cells enter the map when every variable is
+valid in at least half of the months, and the basin mean of each month uses the valid
+cells. They are examples for learning the tool, not the data of the case study (stage 9),
+which will work on every cell and month.
+
+In the app, download a file (for example
+[foz_ocean_map.csv](https://raw.githubusercontent.com/gfonseca-unifesp/depprep/main/inst/extdata/foz_ocean_map.csv)
+or [foz_ocean_series.csv](https://raw.githubusercontent.com/gfonseca-unifesp/depprep/main/inst/extdata/foz_ocean_series.csv))
+and load it in step 1, marking `x_km` and `y_km` (spatial) or `time` (temporal). In code:
+
+```r
+library(depprep)
+map <- read.csv(system.file("extdata", "foz_ocean_map.csv", package = "depprep"))
+X   <- as.matrix(map[, c("chl", "par", "poc", "sst", "wind_x")])
+xy  <- as.matrix(map[, c("x_km", "y_km")])
+gr  <- group_regimes(diagnose_variables(X, coords = xy))
+cr  <- correct(X, gr, coords = xy)                 # about half a minute
+v   <- verify(cr, X, coords = xy)
+
+series <- read.csv(system.file("extdata", "foz_ocean_series.csv", package = "depprep"))
+Xt <- as.matrix(series[, c("chl", "par", "poc", "sst", "wind_x")])
+crt <- correct(Xt, group_regimes(diagnose_variables(Xt, time = series$time)), time = series$time)
+```
 
 ### The six steps
 
