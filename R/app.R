@@ -87,6 +87,164 @@ run_app <- function(launch.browser = interactive()) {
   out
 }
 
+# --- Figures of the app: drawn on screen and saved for publication -------------------
+# Every figure is a function of `cex` (text size) and `pt` (point size), so the screen
+# and the downloaded file are drawn by the same code.
+
+# Save a figure in a file: PNG or TIFF at `dpi`, or PDF or SVG (vector), with the size in cm.
+.save_figure <- function(file, draw, format = c("png", "pdf", "svg", "tiff"), width_cm = 16, height_cm = 10, dpi = 300) {
+  format <- match.arg(format)
+  w <- width_cm / 2.54; h <- height_cm / 2.54
+  switch(format,
+    png = grDevices::png(file, width = w, height = h, units = "in", res = dpi),
+    tiff = grDevices::tiff(file, width = w, height = h, units = "in", res = dpi, compression = "lzw"),
+    pdf = grDevices::pdf(file, width = w, height = h),
+    svg = grDevices::svg(file, width = w, height = h))
+  on.exit(grDevices::dev.off())
+  draw()
+  invisible(file)
+}
+
+# A plot with its download button underneath.
+.figure_ui <- function(id, height) {
+  shiny::tagList(shiny::plotOutput(id, height = height), shiny::downloadButton(paste0("dl_", id), "Download figure"))
+}
+
+# Names of the two coordinate columns, for the axes.
+.axis_names <- function(m) { n <- colnames(m); if (is.null(n)) c("x", "y") else n }
+
+# Colours of the classes (colour-blind safe, Okabe-Ito); noise (class 0) in grey.
+.class_colours <- function(cl) {
+  pal <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#000000")
+  ifelse(cl == 0, "grey80", pal[(cl - 1) %% length(pal) + 1])
+}
+
+# The technique of step 2 on the raw and on the corrected data, for the preview of step
+# 5: the scores of the observations on the first two PCA axes (on the axes of the
+# corrected R for the corrected data) or the MDS configuration, or the classes of
+# k-means, SOM (units grouped into k) or HDBSCAN (0 = noise). With more than `max_n`
+# observations a seeded subsample is shown. `rows` are the rows of X shown.
+.technique_preview <- function(technique = c("pca", "mds", "kmeans", "som", "hdbscan"), X, Xc, Rc = NULL, k = 3,
+                               seed = 1L, max_n = 2000) {
+  technique <- match.arg(technique)
+  rows <- utils::tail(seq_len(nrow(X)), nrow(Xc))          # the whitening drops the first times
+  X <- as.matrix(X)[rows, , drop = FALSE]
+  n <- nrow(X)
+  sub <- if (n > max_n) sort(.with_stream(seed, .streams[["subsample"]], sample(n, max_n))) else seq_len(n)
+  one <- function(M, R) {
+    Z <- scale(M); Z[!is.finite(Z)] <- 0
+    Z <- Z[sub, , drop = FALSE]
+    switch(technique,
+      pca = {
+        e <- eigen(if (is.null(R)) stats::cor(M) else R, symmetric = TRUE)
+        list(xy = Z %*% e$vectors[, 1:2], share = e$values[1:2] / sum(e$values), loadings = e$vectors[, 1:2, drop = FALSE])
+      },
+      mds = list(xy = stats::cmdscale(stats::dist(Z), k = 2)),
+      kmeans = list(cl = stats::kmeans(Z, k, nstart = 10, iter.max = 50)$cluster),
+      som = {
+        sm <- kohonen::som(Z, grid = kohonen::somgrid(5, 5, "hexagonal"), rlen = 100)
+        list(cl = stats::cutree(stats::hclust(stats::dist(sm$codes[[1]]), method = "ward.D2"), k)[sm$unit.classif])
+      },
+      hdbscan = list(cl = dbscan::hdbscan(Z, minPts = max(10L, as.integer(ceiling(0.02 * nrow(Z)))))$cluster))
+  }
+  out <- .with_stream(seed, .streams[["downstream"]], list(raw = one(X, NULL), corrected = one(as.matrix(Xc), Rc)))
+  c(out, list(technique = technique, rows = rows[sub], variables = colnames(X)))
+}
+
+# Draw a preview: two panels, raw and corrected. Scores are coloured by position (the
+# first coordinate, or the time), so a technique that only redraws the map shows a
+# gradient; classes are drawn where the observations are (a map, the time line, or the
+# most frequent class of each site in space-time).
+.draw_preview <- function(p, family, coords = NULL, time = NULL, index = NULL, cex = 1, pt = 1) {
+  graphics::par(mfrow = c(1, 2), mar = c(4.2, 4.2, 3.2, 1.5), cex = cex)
+  nm <- c(pca = "PCA", mds = "MDS", kmeans = "k-means", som = "SOM", hdbscan = "HDBSCAN")[[p$technique]]
+  pos1 <- switch(family, spatial = as.matrix(coords)[p$rows, 1], temporal = time[p$rows], spatiotemporal = index$time[p$rows])
+  pos_name <- switch(family, spatial = "first coordinate", temporal = "time", spatiotemporal = "time")
+  for (k in 1:2) {
+    r <- p[[c("raw", "corrected")[k]]]
+    title <- sprintf("%s, %s", nm, c("raw", "corrected")[k])
+    if (!is.null(r$xy)) {
+      col <- grDevices::hcl.colors(50, "viridis")[cut(rank(pos1, ties.method = "first"), 50, labels = FALSE)]
+      lab <- if (p$technique == "pca") sprintf("axis %d (%.0f%%)", 1:2, 100 * r$share) else c("MDS 1", "MDS 2")
+      graphics::plot(r$xy, pch = 19, cex = 0.6 * pt, col = col, xlab = lab[1], ylab = lab[2], main = title)
+      if (p$technique == "pca") {
+        s <- 0.9 * max(abs(r$xy)) / max(abs(r$loadings))
+        graphics::arrows(0, 0, s * r$loadings[, 1], s * r$loadings[, 2], length = 0.06, col = "grey30")
+        graphics::text(1.08 * s * r$loadings[, 1], 1.08 * s * r$loadings[, 2], p$variables, col = "grey20", cex = 0.85, xpd = NA)
+      }
+      graphics::mtext(sprintf("colour: %s (dark = low, yellow = high)", pos_name), side = 3, line = 0.25, cex = 0.7 * cex)
+    } else {
+      col <- .class_colours(r$cl)
+      if (family == "spatial") {
+        xy <- as.matrix(coords)[p$rows, , drop = FALSE]
+        graphics::plot(xy, pch = 19, cex = 0.8 * pt, col = col, asp = 1, xlab = .axis_names(coords)[1], ylab = .axis_names(coords)[2], main = title)
+      } else if (family == "temporal") {
+        graphics::plot(time[p$rows], r$cl, pch = 15, cex = 0.9 * pt, col = col, xlab = "time", ylab = "class", main = title, yaxt = "n")
+        graphics::axis(2, at = sort(unique(r$cl)))
+      } else {
+        site <- index$site[p$rows]
+        modal <- tapply(r$cl, site, function(z) as.integer(names(which.max(table(z)))))
+        xy <- as.matrix(coords)[as.integer(names(modal)), , drop = FALSE]
+        graphics::plot(xy, pch = 19, cex = 0.8 * pt, col = .class_colours(modal), asp = 1, xlab = "x", ylab = "y",
+                       main = paste(title, "(most frequent class)"))
+      }
+      cls <- sort(unique(r$cl))
+      graphics::legend("topright", legend = ifelse(cls == 0, "noise", paste("class", cls)), pch = 19, col = .class_colours(cls),
+                       bty = "n", cex = 0.75)
+    }
+  }
+}
+
+# Autocorrelation of each variable before (grey) and after (blue), joined by a dotted line.
+.draw_autocor <- function(vv, cex = 1, pt = 1) {
+  o <- seq_len(nrow(vv))
+  graphics::par(mar = c(4.2, 8, 1, 1), las = 1, cex = cex)
+  graphics::plot(vv$autocor_before, o, xlim = range(c(vv$autocor_before, vv$autocor_after, 0), na.rm = TRUE), yaxt = "n", type = "n",
+                 xlab = "autocorrelation (grey: before; blue: after)", ylab = "")
+  graphics::segments(vv$autocor_before, o, vv$autocor_after, o, lty = 3, col = "grey40")
+  graphics::points(vv$autocor_before, o, pch = 19, cex = pt, col = "grey55")
+  graphics::points(vv$autocor_after, o, pch = 19, cex = pt, col = "#2a6fb0")
+  graphics::axis(2, at = o, labels = vv$variable, cex.axis = 0.85)
+  graphics::abline(v = 0, lty = 3)
+}
+
+# Local structure (LISA quadrants) of one variable before and after the correction.
+.draw_lisa <- function(v, variable, coords, cex = 1, pt = 1) {
+  pos <- as.matrix(coords)
+  cols <- c(none = "grey85", high_high = "#c0392b", low_low = "#2a6fb0", high_low = "#f39c12", low_high = "#8e44ad")
+  graphics::par(mfrow = c(1, 2), mar = c(4.2, 4.2, 2.5, 1), cex = cex)
+  for (k in 1:2) {
+    l <- if (k == 1) v$lisa_before else v$lisa
+    l <- l[l$variable == variable, ]
+    graphics::plot(pos[l$site, 1], pos[l$site, 2], pch = 19, cex = 0.7 * pt, col = cols[l$cluster], asp = 1,
+                   xlab = .axis_names(pos)[1], ylab = .axis_names(pos)[2],
+                   main = sprintf("%s, %s (%.0f%% of the sites)", variable, c("before", "after")[k], 100 * mean(l$cluster != "none")))
+  }
+  graphics::legend("topright", names(cols), pch = 19, col = cols, bty = "n", cex = 0.75)
+}
+
+# The plots of the diagnosis of one variable: variogram (space), ACF and periodogram
+# (time), site means and the ACF of the mean series (space-time).
+.draw_diagnosis <- function(d, variable, cex = 1, pt = 1) {
+  z <- d$X[, variable]
+  if (d$family == "spatial") {
+    graphics::par(cex = cex, mar = c(4.2, 4.2, 2.5, 1))
+    v <- gstat::variogram(z ~ 1, locations = ~ x + y, data = data.frame(z = z, x = d$coords[, 1], y = d$coords[, 2]))
+    graphics::plot(v$dist, v$gamma, pch = 19, cex = pt, xlab = "distance", ylab = "semivariance", main = paste("Variogram of", variable))
+  } else if (d$family == "temporal") {
+    o <- order(d$time)
+    graphics::par(mfrow = c(1, 2), cex = cex, mar = c(4.2, 4.2, 2.5, 1))
+    stats::acf(z[o], main = paste("ACF of", variable))
+    sp <- stats::spec.pgram(z[o], taper = 0, detrend = TRUE, plot = FALSE)
+    graphics::plot(1 / sp$freq, sp$spec, type = "h", log = "x", xlab = "period", ylab = "power", main = "Periodogram")
+  } else {
+    graphics::par(mfrow = c(1, 2), cex = cex, mar = c(4.2, 4.2, 2.5, 1))
+    m <- tapply(z, d$index$site, mean)
+    graphics::plot(d$coords, pch = 19, cex = pt, col = grDevices::hcl.colors(20)[cut(m, 20)], asp = 1, main = "Site means", xlab = "x", ylab = "y")
+    stats::acf(tapply(z, d$index$time, mean), main = "ACF of the mean series")
+  }
+}
+
 # A table for the screen: numbers with 3 significant digits, TRUE/FALSE as yes/no, and
 # missing values (a stability not computed, a test that does not apply) left blank.
 .format_table <- function(d) {
@@ -206,7 +364,9 @@ run_app <- function(launch.browser = interactive()) {
         shiny::tableOutput("head")),
       shiny::tabPanel("2. Context",
         shiny::radioButtons("technique", "The corrected data are for",
-          c("PCA (uses the corrected correlation matrix R)" = "pca", "MDS, k-means, SOM or HDBSCAN (use the corrected data matrix X)" = "x")),
+          c("PCA (reads the corrected correlation matrix R)" = "pca", "MDS" = "mds", "k-means" = "kmeans", "SOM" = "som",
+            "HDBSCAN" = "hdbscan")),
+        shiny::p(class = "help", "MDS, k-means, SOM and HDBSCAN read the corrected data matrix X. Step 5 previews the technique chosen here, before and after the correction."),
         shiny::radioButtons("regions", "Could the classes you look for be regions or periods (contiguous in space or time)?",
           c("No" = "no", "Yes" = "yes", "Not sure" = "unsure")),
         shiny::uiOutput("context_msg")),
@@ -215,7 +375,8 @@ run_app <- function(launch.browser = interactive()) {
         shiny::actionButton("diagnose", "Diagnose"),
         shiny::div(style = "overflow-x:auto", shiny::tableOutput("signatures")),
         shiny::downloadButton("dl_diag", "Diagnosis (CSV)"),
-        shiny::fluidRow(shiny::column(4, shiny::uiOutput("plot_var")), shiny::column(8, shiny::plotOutput("diag_plot", height = 300))),
+        shiny::fluidRow(shiny::column(4, shiny::uiOutput("plot_var"), shiny::p(class = "help", "Text size, size and format of the figures: Figures, in step 5.")),
+                        shiny::column(8, .figure_ui("diag_plot", 300))),
         shiny::h4("Change a regime by hand"),
         shiny::uiOutput("override_ui"),
         shiny::h4("Menu of structures for a group"),
@@ -232,18 +393,28 @@ run_app <- function(launch.browser = interactive()) {
         shiny::tableOutput("bases"),
         shiny::uiOutput("correct_msg")),
       shiny::tabPanel("5. Verification",
+        shiny::wellPanel(shiny::strong("Figures (on screen and in the downloads)"),
+          shiny::fluidRow(
+            shiny::column(2, shiny::numericInput("fig_cex", "Text size", 1, min = 0.5, max = 3, step = 0.1)),
+            shiny::column(2, shiny::numericInput("fig_pt", "Point size", 1, min = 0.2, max = 4, step = 0.1)),
+            shiny::column(2, shiny::numericInput("fig_w", "Width (cm)", 17, min = 5, max = 60)),
+            shiny::column(2, shiny::numericInput("fig_h", "Height (cm)", 9, min = 5, max = 60)),
+            shiny::column(2, shiny::selectInput("fig_fmt", "Format", c("PNG" = "png", "PDF" = "pdf", "SVG" = "svg", "TIFF" = "tiff"))),
+            shiny::column(2, shiny::numericInput("fig_dpi", "Resolution (dpi, PNG and TIFF)", 300, min = 72, max = 1200, step = 50)))),
         shiny::actionButton("verify", "Verify"),
         shiny::uiOutput("q3_msg"),
         shiny::h4("Each variable before and after the correction"),
         shiny::p(class = "help", "Variance removed, autocorrelation, and the tests of structure on the raw data and on the corrected data: the Moran correlogram (Bonferroni over distance classes) and the share of sites with local structure (LISA, FDR) in space, the Ljung-Box test in time."),
         shiny::div(style = "overflow-x:auto", shiny::tableOutput("before_after")),
+        shiny::h4("Autocorrelation of each variable before and after"),
+        .figure_ui("autocor_plot", 320),
         shiny::h4("How the correlations changed (Delta R)"),
         shiny::tableOutput("delta"),
-        shiny::plotOutput("autocor_plot", height = 320),
         shiny::uiOutput("lisa_ui"),
         shiny::h4("Preview of the technique, before and after"),
-        shiny::numericInput("k", "Number of groups (k-means)", 3, min = 2, max = 20),
-        shiny::plotOutput("preview", height = 360)),
+        shiny::uiOutput("preview_help"),
+        shiny::numericInput("k", "Number of groups (k-means, SOM)", 3, min = 2, max = 20),
+        .figure_ui("preview", 420)),
       shiny::tabPanel("6. Export",
         shiny::p(class = "help", "Download the results and the R code that reproduces them."),
         shiny::downloadButton("dl_x", "Corrected data (CSV)"),
@@ -305,6 +476,13 @@ run_app <- function(launch.browser = interactive()) {
       "Classes that are regions or periods live at the scale of the basis, and the correction removes them together with the dependence. Step 5 warns when much of the association is at that scale (Q3); in that case use the raw data, or the scale mode of correct(), for those classes.")))
     shiny::tagList(out)
   })
+  # a figure on screen and its download, drawn by the same function of text and point size
+  figure <- function(id, name, draw) {
+    output[[id]] <- shiny::renderPlot(draw(input$fig_cex, input$fig_pt))
+    output[[paste0("dl_", id)]] <- shiny::downloadHandler(
+      function() paste0(name(), ".", input$fig_fmt),
+      function(f) .save_figure(f, function() draw(input$fig_cex, input$fig_pt), input$fig_fmt, input$fig_w, input$fig_h, input$fig_dpi))
+  }
   pos_args <- function(d) switch(d$family, spatial = list(coords = d$coords), temporal = list(time = d$time),
                                  spatiotemporal = list(coords = d$coords, index = d$index))
   shiny::observeEvent(input$diagnose, {
@@ -320,24 +498,9 @@ run_app <- function(launch.browser = interactive()) {
     .format_table(diagnosis_table(rv$sig, rv$grouping))
   })
   output$plot_var <- shiny::renderUI({ shiny::req(input$variables); shiny::selectInput("pvar", "Plot of", input$variables) })
-  output$diag_plot <- shiny::renderPlot({
+  figure("diag_plot", function() paste0("diagnosis_", input$pvar), function(cex, pt) {
     d <- dat(); shiny::req(input$pvar %in% colnames(d$X))
-    z <- d$X[, input$pvar]
-    if (d$family == "spatial") {
-      v <- gstat::variogram(z ~ 1, locations = ~ x + y, data = data.frame(z = z, x = d$coords[, 1], y = d$coords[, 2]))
-      graphics::plot(v$dist, v$gamma, pch = 19, xlab = "distance", ylab = "semivariance", main = paste("Variogram of", input$pvar))
-    } else if (d$family == "temporal") {
-      o <- order(d$time)
-      graphics::par(mfrow = c(1, 2))
-      stats::acf(z[o], main = paste("ACF of", input$pvar))
-      sp <- stats::spec.pgram(z[o], taper = 0, detrend = TRUE, plot = FALSE)
-      graphics::plot(1 / sp$freq, sp$spec, type = "h", log = "x", xlab = "period", ylab = "power", main = "Periodogram")
-    } else {
-      graphics::par(mfrow = c(1, 2))
-      m <- tapply(z, d$index$site, mean)
-      graphics::plot(d$coords, pch = 19, col = grDevices::hcl.colors(20)[cut(m, 20)], asp = 1, main = "Site means", xlab = "x", ylab = "y")
-      stats::acf(tapply(z, d$index$time, mean), main = "ACF of the mean series")
-    }
+    .draw_diagnosis(d, input$pvar, cex, pt)
   })
   types_of <- function(f) switch(f, spatial = c("isotropic", "anisotropic", "none"), temporal = c("ar", "seasonal", "trend", "none"),
     spatiotemporal = c("temporal_common", "spatial_only", "moving", "separable_seasonal", "separable_ar1", "none"))
@@ -429,51 +592,29 @@ run_app <- function(launch.browser = interactive()) {
     shiny::tagList(shiny::h4("Local structure before and after (LISA)"),
                    shiny::selectInput("lvar", "Variable", rv$v$variables$variable,
                                       rv$v$variables$variable[which.max(rv$v$variables$lisa_share_before)]),
-                   shiny::plotOutput("lisa_plot", height = 340))
+                   .figure_ui("lisa_plot", 360))
   })
-  output$lisa_plot <- shiny::renderPlot({
+  figure("lisa_plot", function() paste0("lisa_", input$lvar), function(cex, pt) {
     shiny::req(rv$v, !is.null(rv$v$lisa), input$lvar)
-    pos <- as.matrix(dat()$coords)
-    cols <- c(none = "grey85", high_high = "#c0392b", low_low = "#2a6fb0", high_low = "#f39c12", low_high = "#8e44ad")
-    graphics::par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
-    for (k in 1:2) {
-      l <- if (k == 1) rv$v$lisa_before else rv$v$lisa
-      l <- l[l$variable == input$lvar, ]
-      graphics::plot(pos[l$site, 1], pos[l$site, 2], pch = 19, cex = 0.7, col = cols[l$cluster], asp = 1, xlab = "x", ylab = "y",
-                     main = sprintf("%s, %s (%.0f%% of the sites)", input$lvar, c("before", "after")[k], 100 * mean(l$cluster != "none")))
-    }
-    graphics::legend("topright", names(cols), pch = 19, col = cols, bty = "n", cex = 0.75)
+    .draw_lisa(rv$v, input$lvar, dat()$coords, cex, pt)
   })
-  output$autocor_plot <- shiny::renderPlot({
-    shiny::req(rv$v); vv <- rv$v$variables; o <- seq_len(nrow(vv))
-    graphics::par(mar = c(4, 8, 1, 1), las = 1)
-    graphics::plot(vv$autocor_before, o, xlim = range(c(vv$autocor_before, vv$autocor_after, 0)), yaxt = "n", pch = 19, col = "grey55",
-                   xlab = "autocorrelation (grey: before; blue: after)", ylab = "")
-    graphics::points(vv$autocor_after, o, pch = 19, col = "#2a6fb0")
-    graphics::axis(2, at = o, labels = vv$variable, cex.axis = 0.8)
-    graphics::abline(v = 0, lty = 3)
+  figure("autocor_plot", function() "autocorrelation_before_after", function(cex, pt) {
+    shiny::req(rv$v)
+    .draw_autocor(rv$v$variables, cex, pt)
   })
-  output$preview <- shiny::renderPlot({
+  output$preview_help <- shiny::renderUI(shiny::p(class = "help", switch(input$technique,
+    pca = "PCA scores of the observations on the first two axes, raw (axes of the raw correlations) and corrected (axes of the corrected R), coloured by position; the arrows are the variables. A gradient of colour along an axis means the axis follows the position.",
+    mds = "MDS of the observations (Euclidean distances of the standardised data), raw and corrected, coloured by position. A gradient of colour means the configuration redraws the map or the time line.",
+    kmeans = "k-means classes of the observations, raw and corrected, drawn where the observations are.",
+    som = "SOM (5 x 5 units, grouped into k classes), raw and corrected, drawn where the observations are.",
+    hdbscan = "HDBSCAN classes of the observations (grey: noise), raw and corrected, drawn where the observations are.")))
+  preview <- shiny::reactive({
     shiny::req(rv$cr, !inherits(rv$cr, "error"))
+    .technique_preview(input$technique, dat()$X, rv$cr$X, rv$cr$R, k = input$k)
+  })
+  figure("preview", function() paste0("preview_", input$technique), function(cex, pt) {
     d <- dat()
-    graphics::par(mfrow = c(1, 2))
-    if (input$technique == "pca") {
-      for (k in 1:2) {
-        R <- if (k == 1) stats::cor(d$X) else rv$cr$R
-        e <- eigen(R, symmetric = TRUE)
-        graphics::plot(e$vectors[, 1:2], type = "n", xlab = sprintf("axis 1 (%.0f%%)", 100 * e$values[1] / sum(e$values)),
-                       ylab = sprintf("axis 2 (%.0f%%)", 100 * e$values[2] / sum(e$values)), main = c("PCA, raw", "PCA, corrected")[k])
-        graphics::text(e$vectors[, 1:2], colnames(d$X), cex = 0.7)
-      }
-    } else {
-      Xc <- rv$cr$X
-      for (k in 1:2) {
-        Z <- scale(if (k == 1) d$X[utils::tail(seq_len(nrow(d$X)), nrow(Xc)), ] else Xc)
-        cl <- stats::kmeans(Z, input$k, nstart = 10)$cluster
-        pc <- stats::prcomp(Z)$x[, 1:2]
-        graphics::plot(pc, col = cl, pch = 19, cex = 0.6, main = c("k-means, raw", "k-means, corrected")[k])
-      }
-    }
+    .draw_preview(preview(), d$family, d$coords, d$time, d$index, cex, pt)
   })
   output$dl_x <- shiny::downloadHandler("corrected_data.csv", function(f) utils::write.csv(rv$cr$X, f, row.names = FALSE))
   output$dl_r <- shiny::downloadHandler("corrected_R.csv", function(f) utils::write.csv(rv$cr$R, f))

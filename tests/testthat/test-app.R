@@ -1,3 +1,45 @@
+test_that("the preview of each technique gives scores or classes for the raw and corrected data", {
+  df <- depprep:::.app_example()
+  d <- depprep:::.app_data(df, "spatial", x = "x", y = "y")
+  cr <- correct(d$X, group_regimes(diagnose_variables(d$X, coords = d$coords)), coords = d$coords, seed = 1)
+  for (tq in c("pca", "mds", "kmeans", "som", "hdbscan")) {
+    p <- depprep:::.technique_preview(tq, d$X, cr$X, cr$R, k = 3)
+    expect_identical(p$technique, tq)
+    expect_identical(p$rows, seq_len(nrow(d$X)))
+    for (part in c("raw", "corrected")) {
+      if (tq %in% c("pca", "mds")) expect_equal(dim(p[[part]]$xy), c(nrow(d$X), 2)) else expect_length(p[[part]]$cl, nrow(d$X))
+    }
+    if (tq %in% c("kmeans", "som")) expect_setequal(unique(p$raw$cl), 1:3)
+    f <- tempfile(fileext = ".pdf")
+    expect_silent(depprep:::.save_figure(f, function() depprep:::.draw_preview(p, "spatial", d$coords, cex = 1.3, pt = 0.8), "pdf"))
+    expect_gt(file.size(f), 1000)
+  }
+  # seeded: the same preview twice; a subsample above max_n
+  expect_identical(depprep:::.technique_preview("kmeans", d$X, cr$X, k = 3), depprep:::.technique_preview("kmeans", d$X, cr$X, k = 3))
+  ps <- depprep:::.technique_preview("mds", d$X, cr$X, max_n = 50)
+  expect_length(ps$rows, 50)
+  expect_equal(nrow(ps$raw$xy), 50)
+  # the PCA of the corrected data uses the axes of the corrected R
+  pp <- depprep:::.technique_preview("pca", d$X, cr$X, cr$R)
+  expect_equal(pp$corrected$share, eigen(cr$R, symmetric = TRUE)$values[1:2] / ncol(cr$R))
+})
+
+test_that("figures are saved in every format at the size asked", {
+  draw <- function() depprep:::.draw_autocor(data.frame(variable = c("a", "b"), autocor_before = c(0.8, 0.5), autocor_after = c(0.1, -0.05)),
+                                             cex = 1.2, pt = 1.5)
+  for (fmt in c("png", "pdf", "tiff", if (isTRUE(capabilities("cairo"))) "svg")) {
+    f <- tempfile(fileext = paste0(".", fmt))
+    depprep:::.save_figure(f, draw, fmt, width_cm = 12, height_cm = 8, dpi = 150)
+    expect_gt(file.size(f), 500)
+  }
+  f <- tempfile(fileext = ".png")
+  depprep:::.save_figure(f, draw, "png", width_cm = 12, height_cm = 8, dpi = 150)
+  sig <- readBin(f, "raw", 24)
+  expect_equal(c(readBin(sig[17:20], "integer", size = 4, endian = "big"), readBin(sig[21:24], "integer", size = 4, endian = "big")),
+               c(round(12 / 2.54 * 150), round(8 / 2.54 * 150)), tolerance = 1)
+  expect_identical(depprep:::.class_colours(c(0, 1, 9)), c("grey80", "#E69F00", "#E69F00"))
+})
+
 test_that(".format_table() shows 3 significant digits and leaves missing values blank", {
   d <- data.frame(a = c("x", NA), p = c(0.005, NA), big = c(35100, 0.0273), ok = c(TRUE, NA), stringsAsFactors = FALSE)
   f <- depprep:::.format_table(d)
