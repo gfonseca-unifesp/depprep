@@ -50,6 +50,10 @@ A list of class \code{depprep_verification} with
 \code{p_adjusted} and \code{cluster}, the quadrant \code{high_high}, \code{low_low}, \code{high_low} or
 \code{low_high} of the sites with local structure, \code{none} otherwise; \code{NULL} in time),
 and \code{lisa_share} in \code{variables}, the share of sites with local structure;
+\item \code{correlograms_before} and \code{lisa_before}: the same, for the raw data before the
+correction (in space-time, on the site means), with \code{correlogram_p_before} and
+\code{lisa_share_before} in \code{variables}; in time, \code{lb_p_before} (the Ljung-Box test of
+the raw series). They describe what the diagnosis saw, for the user to compare;
 \item \code{mantel} (data frame, one row per distance class: \code{class}, \code{distance}, \code{pairs},
 \code{mantel_r}, \code{p}, \code{p_progressive}; \code{NULL} when \code{nperm = 0}) and \code{mantel_p} (its
 Bonferroni global test);

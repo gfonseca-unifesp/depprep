@@ -148,6 +148,33 @@ test_that("the LISA finds a region left by the correction and nothing in white n
   expect_null(verify(correct(st, grt), st, nperm = 0)$lisa)
 })
 
+test_that("verify() describes the raw data before the correction, without changing the rest", {
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("none", 2, "none"))
+  s <- sim_spatial(150, g, seed = 3)
+  grp <- stats::setNames(c("g1", "g1", "g1", "none", "none"), colnames(s$X))
+  cr <- correct(s, grp, seed = 1)
+  v <- verify(cr, s, nperm = 49, seed = 2)
+  # the raw correlogram is the one of the data centred only
+  expect_equal(v$correlograms_before, depprep:::.moran_correlogram(s$X, s$coords, depprep:::.fixed_space(matrix(0, 150, 0))))
+  expect_equal(v$lisa_before, depprep:::.lisa(s$X, s$coords))
+  vv <- v$variables
+  dep <- vv$variable %in% names(grp)[grp == "g1"]
+  expect_equal(sum(dep), 3)
+  expect_true(all(vv$correlogram_p_before[dep] < 0.01))                 # the shared field is seen before the correction
+  expect_gt(mean(vv$lisa_share_before[dep]), mean(vv$lisa_share[dep]))
+  # reproducible with the seed (the new tests draw from their own random streams)
+  v0 <- verify(cr, s, nperm = 49, seed = 2)
+  expect_identical(v0$mantel, v$mantel)
+  # space-time: on the means of each site; time: Ljung-Box of the raw series
+  gt <- sim_groups(sim_group("a", 2, "ar1", phi = 0.8))
+  st <- sim_temporal(100, gt, seed = 1)
+  grt <- data.frame(variable = colnames(st$X), group = "g1", group_type = "ar")
+  class(grt) <- c("depprep_grouping", "data.frame"); attr(grt, "period") <- c(g1 = NA)
+  vt <- verify(correct(st, grt), st, nperm = 0)
+  expect_null(vt$correlograms_before)
+  expect_true(all(vt$variables$lb_p_before < 0.01))
+})
+
 test_that("spectral surrogates keep each variable's spectrum and break the association", {
   set.seed(2)
   coords <- cbind(runif(120), runif(120))

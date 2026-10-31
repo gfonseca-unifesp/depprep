@@ -100,6 +100,10 @@
 #'     `p_adjusted` and `cluster`, the quadrant `high_high`, `low_low`, `high_low` or
 #'     `low_high` of the sites with local structure, `none` otherwise; `NULL` in time),
 #'     and `lisa_share` in `variables`, the share of sites with local structure;
+#'   * `correlograms_before` and `lisa_before`: the same, for the raw data before the
+#'     correction (in space-time, on the site means), with `correlogram_p_before` and
+#'     `lisa_share_before` in `variables`; in time, `lb_p_before` (the Ljung-Box test of
+#'     the raw series). They describe what the diagnosis saw, for the user to compare;
 #'   * `mantel` (data frame, one row per distance class: `class`, `distance`, `pairs`,
 #'     `mantel_r`, `p`, `p_progressive`; `NULL` when `nperm = 0`) and `mantel_p` (its
 #'     Bonferroni global test);
@@ -216,6 +220,23 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
   mantel <- .mantel_correlogram(Z, position, Fq_all, nperm, seed)
   mantel_p <- if (is.null(mantel)) NA_real_ else min(1, min(mantel$p, na.rm = TRUE) * sum(!is.na(mantel$p)))
 
+  # the same descriptions of the raw data, before the correction, for the user to compare
+  # (exploratory; the null removes only the mean)
+  Z0 <- switch(family, spatiotemporal = apply(X, 2, function(z) tapply(z, index$site, mean)), Xo)
+  Fq0 <- .fixed_space(matrix(0, nrow(Z0), 0))
+  correlograms_before <- lisa_before <- NULL
+  if (family == "temporal") {
+    vars$lb_p_before <- .ljung_box(Z0, lag, Fq0, nperm, seed)
+  } else {
+    correlograms_before <- .moran_correlogram(Z0, position, Fq0)
+    by_var0 <- split(correlograms_before, factor(correlograms_before$variable, levels = colnames(X)))
+    vars$correlogram_p_before <- vapply(by_var0, function(d) if (all(is.na(d$p))) NA_real_ else
+      min(1, min(d$p, na.rm = TRUE) * sum(!is.na(d$p))), 0, USE.NAMES = FALSE)
+    lisa_before <- .lisa(Z0, coords, alpha)
+    vars$lisa_share_before <- vapply(colnames(X), function(v) mean(lisa_before$cluster[lisa_before$variable == v] != "none"), 0,
+                                     USE.NAMES = FALSE)
+  }
+
   # what the correction did to the correlations
   R_raw <- stats::cor(X)
   dR <- corrected$R - R_raw
@@ -237,7 +258,8 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
                                   "correlation of %.2f between variables (threshold %.2f); classes that are regions or",
                                   "periods would be removed by the correction"), q3_stat[["mean"]], q3_threshold))
   }
-  structure(list(variables = vars, correlograms = correlograms, lisa = lisa, mantel = mantel, mantel_p = mantel_p,
+  structure(list(variables = vars, correlograms = correlograms, lisa = lisa,
+                 correlograms_before = correlograms_before, lisa_before = lisa_before, mantel = mantel, mantel_p = mantel_p,
                  R_large = parts$R_large, cov_large = parts$cov_large, cov_residual = parts$cov_residual,
                  large_share = parts$large_share, large_share_pairwise = parts$large_share_pairwise,
                  q3 = list(statistic = q3_stat[["mean"]], share = q3_stat[["share"]], threshold = q3_threshold,
