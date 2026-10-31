@@ -1,3 +1,13 @@
+test_that(".format_table() shows 3 significant digits and leaves missing values blank", {
+  d <- data.frame(a = c("x", NA), p = c(0.005, NA), big = c(35100, 0.0273), ok = c(TRUE, NA), stringsAsFactors = FALSE)
+  f <- depprep:::.format_table(d)
+  expect_identical(f$a, c("x", ""))
+  expect_identical(f$p, c("0.005", ""))
+  expect_identical(f$ok, c("yes", ""))
+  expect_false(any(grepl("NA", unlist(f))))
+  expect_identical(dim(f), dim(d))
+})
+
 test_that(".coord_like() finds the coordinate columns, with or without a unit", {
   nm <- c("x_km", "y_km", "lon", "lat", "Longitude", "x", "easting", "chl", "sst", "lat2", "max")
   expect_identical(nm[depprep:::.coord_like(nm)], c("x_km", "y_km", "lon", "lat", "Longitude", "x", "easting"))

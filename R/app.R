@@ -87,6 +87,17 @@ run_app <- function(launch.browser = interactive()) {
   out
 }
 
+# A table for the screen: numbers with 3 significant digits, TRUE/FALSE as yes/no, and
+# missing values (a stability not computed, a test that does not apply) left blank.
+.format_table <- function(d) {
+  d[] <- lapply(d, function(x) {
+    out <- if (is.logical(x)) ifelse(x, "yes", "no") else if (is.numeric(x)) format(x, digits = 3, trim = TRUE, drop0trailing = TRUE) else as.character(x)
+    out[is.na(x)] <- ""
+    out
+  })
+  d
+}
+
 # Columns whose names look like coordinates (x, y, lon, lat, easting, northing, with an
 # optional unit such as x_km or lon_deg): the app guesses x and y from them and leaves
 # them out of the variables it proposes.
@@ -223,8 +234,13 @@ run_app <- function(launch.browser = interactive()) {
       shiny::tabPanel("5. Verification",
         shiny::actionButton("verify", "Verify"),
         shiny::uiOutput("q3_msg"),
+        shiny::h4("Each variable before and after the correction"),
+        shiny::p(class = "help", "Variance removed, autocorrelation, and the tests of structure on the raw data and on the corrected data: the Moran correlogram (Bonferroni over distance classes) and the share of sites with local structure (LISA, FDR) in space, the Ljung-Box test in time."),
+        shiny::div(style = "overflow-x:auto", shiny::tableOutput("before_after")),
+        shiny::h4("How the correlations changed (Delta R)"),
         shiny::tableOutput("delta"),
         shiny::plotOutput("autocor_plot", height = 320),
+        shiny::uiOutput("lisa_ui"),
         shiny::h4("Preview of the technique, before and after"),
         shiny::numericInput("k", "Number of groups (k-means)", 3, min = 2, max = 20),
         shiny::plotOutput("preview", height = 360)),
@@ -256,13 +272,18 @@ run_app <- function(launch.browser = interactive()) {
     nm <- names(rv$df)
     guess <- function(p) { m <- grep(p, nm, ignore.case = TRUE, value = TRUE); if (length(m)) m[1] else NULL }
     guess_xy <- function(axis) { m <- nm[.coord_like(nm, axis)]; if (length(m)) m[1] else NULL }
+    # keep what the user chose; this block is drawn again only for new data or a new family
+    keep <- function(id, fallback) { v <- shiny::isolate(input[[id]]); if (!is.null(v) && v %in% nm) v else fallback }
+    sel <- list(x = keep("x", guess_xy("x")), y = keep("y", guess_xy("y")),
+                time = keep("time", guess("^(t|time|date|month|year)$")), site = keep("site", guess("^(site|station|pixel|id)$")))
+    used <- unlist(c(if (input$family != "temporal") sel[c("x", "y")], if (input$family != "spatial") sel["time"],
+                     if (input$family == "spatiotemporal") sel["site"]))
     shiny::tagList(
-      if (input$family != "temporal") shiny::fluidRow(shiny::column(3, shiny::selectInput("x", "x column (km, m or longitude)", nm, guess_xy("x"))),
-                                                   shiny::column(3, shiny::selectInput("y", "y column (km, m or latitude)", nm, guess_xy("y")))),
-      if (input$family != "spatial") shiny::fluidRow(shiny::column(3, shiny::selectInput("time", "time column", nm, guess("^(t|time|date|month|year)$"))),
-        if (input$family == "spatiotemporal") shiny::column(3, shiny::selectInput("site", "site column", nm, guess("^(site|station|pixel|id)$")))),
-      shiny::selectizeInput("variables", "Variables", num_cols(),
-                            setdiff(num_cols()[!.coord_like(num_cols())], c(input$x, input$y, input$time, input$site)), multiple = TRUE))
+      if (input$family != "temporal") shiny::fluidRow(shiny::column(3, shiny::selectInput("x", "x column (km, m or longitude)", nm, sel$x)),
+                                                   shiny::column(3, shiny::selectInput("y", "y column (km, m or latitude)", nm, sel$y))),
+      if (input$family != "spatial") shiny::fluidRow(shiny::column(3, shiny::selectInput("time", "time column", nm, sel$time)),
+        if (input$family == "spatiotemporal") shiny::column(3, shiny::selectInput("site", "site column", nm, sel$site))),
+      shiny::selectizeInput("variables", "Variables", num_cols(), setdiff(num_cols()[!.coord_like(num_cols())], used), multiple = TRUE))
   })
   dat <- shiny::reactive({
     shiny::req(rv$df, input$variables)
@@ -296,7 +317,7 @@ run_app <- function(launch.browser = interactive()) {
   })
   output$signatures <- shiny::renderTable({
     shiny::req(rv$grouping, rv$sig)
-    diagnosis_table(rv$sig, rv$grouping)
+    .format_table(diagnosis_table(rv$sig, rv$grouping))
   })
   output$plot_var <- shiny::renderUI({ shiny::req(input$variables); shiny::selectInput("pvar", "Plot of", input$variables) })
   output$diag_plot <- shiny::renderPlot({
@@ -397,6 +418,32 @@ run_app <- function(launch.browser = interactive()) {
       shiny::div(class = "ok", sprintf("No Q3 warning (%.2f, threshold %.2f).", q$statistic, q$threshold))
   })
   output$delta <- shiny::renderTable({ shiny::req(rv$v); rv$v$delta_summary }, digits = 3)
+  output$before_after <- shiny::renderTable({
+    shiny::req(rv$v)
+    tab <- .before_after(rv$v, dat()$family)
+    names(tab) <- attr(tab, "labels")
+    .format_table(tab)
+  })
+  output$lisa_ui <- shiny::renderUI({
+    shiny::req(rv$v, !is.null(rv$v$lisa))
+    shiny::tagList(shiny::h4("Local structure before and after (LISA)"),
+                   shiny::selectInput("lvar", "Variable", rv$v$variables$variable,
+                                      rv$v$variables$variable[which.max(rv$v$variables$lisa_share_before)]),
+                   shiny::plotOutput("lisa_plot", height = 340))
+  })
+  output$lisa_plot <- shiny::renderPlot({
+    shiny::req(rv$v, !is.null(rv$v$lisa), input$lvar)
+    pos <- as.matrix(dat()$coords)
+    cols <- c(none = "grey85", high_high = "#c0392b", low_low = "#2a6fb0", high_low = "#f39c12", low_high = "#8e44ad")
+    graphics::par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+    for (k in 1:2) {
+      l <- if (k == 1) rv$v$lisa_before else rv$v$lisa
+      l <- l[l$variable == input$lvar, ]
+      graphics::plot(pos[l$site, 1], pos[l$site, 2], pch = 19, cex = 0.7, col = cols[l$cluster], asp = 1, xlab = "x", ylab = "y",
+                     main = sprintf("%s, %s (%.0f%% of the sites)", input$lvar, c("before", "after")[k], 100 * mean(l$cluster != "none")))
+    }
+    graphics::legend("topright", names(cols), pch = 19, col = cols, bty = "n", cex = 0.75)
+  })
   output$autocor_plot <- shiny::renderPlot({
     shiny::req(rv$v); vv <- rv$v$variables; o <- seq_len(nrow(vv))
     graphics::par(mar = c(4, 8, 1, 1), las = 1)
