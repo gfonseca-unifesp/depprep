@@ -63,9 +63,11 @@ test_that("the R code of the app parses and reproduces the correction", {
                               list(), list(), "conditional", "global")
   code <- sub("depprep_report.html", file.path(dir, "r.html"), code, fixed = TRUE)
   code <- gsub("\"corrected_", paste0("\"", dir, "/corrected_"), code, fixed = TRUE)
+  code <- gsub("\"diagnosis.csv\"", paste0("\"", dir, "/diagnosis.csv\""), code, fixed = TRUE)
   env <- new.env()
   eval(parse(text = code), envir = env)
   expect_true(file.exists(file.path(dir, "r.html")))
+  expect_true(file.exists(file.path(dir, "diagnosis.csv")))
   expect_equal(dim(env$cr$X), c(200, 10))
 })
 
