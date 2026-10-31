@@ -356,7 +356,46 @@ power of predictive models under random validation; blocked validation in space 
 time removes much of it (Roberts et al. 2017, Ecography 40:913-929; Ploton et al. 2020,
 Nature Communications 11:4540).
 
-## 10. Known limits
+## 10. The app: the same workflow without code
+
+`run_app()` opens a point-and-click interface (Shiny) in the browser. It runs the same
+functions as the code above and, at the end, gives you the R code that reproduces every
+choice you made.
+
+**Start it from R or RStudio:**
+
+```r
+install.packages(c("remotes", "shiny"))
+remotes::install_github("gfonseca-unifesp/depprep")   # once
+depprep::run_app()
+```
+
+**Or from the command line** (a terminal, with R on the PATH):
+
+```bash
+Rscript -e "depprep::run_app(launch.browser = TRUE)"
+```
+
+The app opens in your default browser; close the terminal (or press Ctrl+C) to stop it.
+To try it without your own data, click **Use example data** in step 1 (a spatial
+simulation with three groups of variables and three hidden classes).
+
+The six steps:
+
+| Step | What you do | What you get |
+| --- | --- | --- |
+| 1. Data | Load a CSV with one row per observation and mark the position columns (x and y, time, site); choose spatial, temporal or space-time | A check of the columns and the first rows |
+| 2. Context | Say which technique the data are for (PCA, or MDS, k-means, SOM and HDBSCAN) and whether the classes you seek could be regions or periods | Which corrected matrix the technique reads, and a warning when correcting would remove the classes you are looking for |
+| 3. Diagnosis | Look at each variable's dependence and its plots (variogram, ACF, periodogram); change a regime by hand, or build the menu of structures of a group (trend, cycle with its period, Moran maps with a chosen graph, directional maps) | The groups of variables that will share a basis |
+| 4. Correction | Accept the default (the data matrix with one basis per variable, the correlation matrix with the shared basis) or choose another mode (conditional, whitening) and other bases for the correlation matrix | The bases used, with their size (k, k/n) and first terms |
+| 5. Verification | Check what was removed and what was kept | The autocorrelation of each variable before and after, the change in the correlations, the warning of signal at the scale of the basis, and a preview of the technique (PCA or k-means) before and after |
+| 6. Export | Download the results | The corrected data (CSV), the corrected correlation matrix (CSV), the HTML report of `report_correction()` and the R code |
+
+Limits shown in the app: missing values are not supported yet, coordinates in degrees
+should be projected first, and data with more than a few thousand observations are slow
+(the correction of a 628-site x 93-month grid takes hours).
+
+## 11. Known limits
 
 ### Why purely spatial regimes are hard to tell apart
 
@@ -419,7 +458,7 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
 - **Coordinates in degrees** should be projected first; distances in degrees are
   distorted away from the equator.
 
-## 11. Reproducibility
+## 12. Reproducibility
 
 - **Seeds.** Every simulation uses an explicit seed, stored in its output. The generators
   use the L'Ecuyer-CMRG generator with one independent stream per component (coordinates,
@@ -432,6 +471,6 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
   moving pattern, and more.
 - **Package versions.** `renv.lock` pins every package.
 
-## 12. License
+## 13. License
 
 MIT — see `LICENSE.md`.
