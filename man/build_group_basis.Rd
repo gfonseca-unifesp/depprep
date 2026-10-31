@@ -16,7 +16,8 @@ build_group_basis(
   nperm = 199,
   seed = 1L,
   trend = TRUE,
-  menu = NULL
+  menu = NULL,
+  sample_sites = 1
 )
 }
 \arguments{
@@ -49,6 +50,14 @@ used to compare the individual bases of the second grouping level.}
 of the candidates of \code{type} (which then only sets the data family and may be
 \code{NULL}). Without a menu, the candidates of \code{type} above are the menu
 \code{.menu_of_type()} and give the same basis as before the menus existed.}
+
+\item{sample_sites}{Share of the sites (between 0 and 1) on which the terms are
+selected, to save time on large grids (spatial and spatio-temporal data; all times
+are kept). The sites are drawn with \code{seed}; the selected terms are then taken on all
+rows. With 1 (the default) every site is used and nothing changes. The sample must
+keep many more rows than candidates, or the tests lose power (with 100 sites and 61
+candidate maps, the global test fails); it is meant for large grids. Experimental:
+it changes the bases and is being checked against the full selection (decision D25).}
 }
 \value{
 A matrix with orthonormal columns (one row per observation) of class

@@ -49,6 +49,13 @@
 #' @param trend Put the trend terms (trend surface in space, cubic polynomial of time)
 #'   among the candidates. `FALSE` gives the eigenvector maps and harmonics only, as
 #'   used to compare the individual bases of the second grouping level.
+#' @param sample_sites Share of the sites (between 0 and 1) on which the terms are
+#'   selected, to save time on large grids (spatial and spatio-temporal data; all times
+#'   are kept). The sites are drawn with `seed`; the selected terms are then taken on all
+#'   rows. With 1 (the default) every site is used and nothing changes. The sample must
+#'   keep many more rows than candidates, or the tests lose power (with 100 sites and 61
+#'   candidate maps, the global test fails); it is meant for large grids. Experimental:
+#'   it changes the bases and is being checked against the full selection (decision D25).
 #' @param menu Optional [basis_menu()]: the structures to build the basis from, in place
 #'   of the candidates of `type` (which then only sets the data family and may be
 #'   `NULL`). Without a menu, the candidates of `type` above are the menu
@@ -74,7 +81,8 @@
 #' attr(b, "k")
 #' @export
 build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL, type = NULL, period = NULL,
-                              kn_max = 0.25, alpha = 0.05, nperm = 199, seed = 1L, trend = TRUE, menu = NULL) {
+                              kn_max = 0.25, alpha = 0.05, nperm = 199, seed = 1L, trend = TRUE, menu = NULL,
+                              sample_sites = 1) {
   .stop_if_missing(X_group, coords, time)
   Y <- scale(as.matrix(X_group))
   Y[!is.finite(Y)] <- 0                                   # constant columns carry no information
@@ -99,12 +107,21 @@ build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL,
     if (!is.null(coords) && !is.null(index)) "spatiotemporal" else if (!is.null(coords)) "spatial" else if (!is.null(time)) "temporal" else
       stop("Give `coords`, `time` or `coords` and `index`.", call. = FALSE)
   margins <- .term_margins(menu, family)
+  if (!is.numeric(sample_sites) || length(sample_sites) != 1 || sample_sites <= 0 || sample_sites > 1) {
+    stop("`sample_sites` must be one number in (0, 1].", call. = FALSE)
+  }
+  # the sites on which the terms are selected (all of them by default)
+  kept <- NULL
+  if (sample_sites < 1 && family != "temporal") {
+    n_s <- nrow(as.matrix(coords))
+    kept <- sort(.with_stream(seed, .streams[["subsample"]], sample.int(n_s, max(3L, ceiling(sample_sites * n_s)))))
+  }
 
   .with_stream(seed, .streams[["basis"]], {
     if (family == "spatial") {
       if (is.null(coords)) stop("`coords` is required for spatial groups.", call. = FALSE)
       if (any(margins == "time")) stop("Temporal terms in a menu for spatial data.", call. = FALSE)
-      sel <- .select_alternatives(Y, .margin_candidates(menu, margins, "space", coords, Y), kn_max, alpha, nperm)
+      sel <- .select_alternatives(Y, .margin_candidates(menu, margins, "space", coords, Y), kn_max, alpha, nperm, rows = kept)
     } else if (family == "temporal") {
       if (is.null(time)) stop("`time` is required for temporal groups.", call. = FALSE)
       if (any(margins == "space")) stop("Spatial terms in a menu for temporal data.", call. = FALSE)
@@ -114,7 +131,7 @@ build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL,
       sel$basis[ord, ] <- sel$basis                        # back to the order of the rows
     } else {
       if (is.null(coords) || is.null(index)) stop("`coords` and `index` are required for spatio-temporal groups.", call. = FALSE)
-      sel <- .st_select(Y, coords, index, menu, margins, kn_max, alpha, nperm)
+      sel <- .st_select(Y, coords, index, menu, margins, kn_max, alpha, nperm, kept)
     }
     b <- .as_basis(sel$basis, type, n, sel$r2, sel$terms, sel$scalogram)
     if (!is.null(sel$W)) attr(b, "W") <- sel$W
@@ -262,8 +279,19 @@ print.depprep_basis <- function(x, ...) {
 
 # Forward selection over orthonormal candidates (see build_group_basis()). Uses the
 # random stream of the caller. Also returns the scalogram: the share of variance each
-# candidate explains, selected or not.
-.forward_select <- function(Y, cand, kn_max, alpha, nperm) {
+# candidate explains, selected or not. With `rows`, the terms are selected on those rows
+# only (the candidates rescaled to unit norm there, so they are nearly orthonormal) and
+# then taken on all rows; the cap on k/n keeps the number of rows of the whole data.
+.forward_select <- function(Y, cand, kn_max, alpha, nperm, rows = NULL) {
+  if (!is.null(rows) && length(rows) < nrow(Y)) {
+    n_all <- nrow(Y); m <- length(rows)
+    s <- .forward_select(Y[rows, , drop = FALSE], cand[rows, , drop = FALSE] * sqrt(n_all / m),
+                         min(kn_max * n_all / m, (m - 2) / m), alpha, nperm)
+    tss <- sum(Y^2)
+    contrib <- rowSums(crossprod(cand, Y)^2)
+    return(list(basis = cand[, s$terms, drop = FALSE], r2 = sum(contrib[s$terms]) / tss, terms = s$terms,
+                scalogram = stats::setNames(contrib / tss, colnames(cand))))
+  }
   n <- nrow(Y)
   empty <- list(basis = matrix(0, n, 0), r2 = 0, terms = character(0), scalogram = numeric(0))
   if (!ncol(cand)) return(empty)
@@ -303,7 +331,7 @@ print.depprep_basis <- function(x, ...) {
 
 # Spatio-temporal basis: marginal selections on the stacked data, then forward
 # selection among their products.
-.st_select <- function(Y, coords, index, menu, margins, kn_max, alpha, nperm) {
+.st_select <- function(Y, coords, index, menu, margins, kn_max, alpha, nperm, kept = NULL) {
   sites <- index$site
   times <- match(index$time, sort(unique(index$time)))
   n_s <- nrow(as.matrix(coords))
@@ -319,10 +347,11 @@ print.depprep_basis <- function(x, ...) {
   has <- function(m) any(margins == m)
   s_terms <- if (!has("space")) NULL else {
     Ys <- scale(by_site, scale = FALSE)
-    .select_alternatives(Ys, .margin_candidates(menu, margins, "space", coords, Ys), kn_max, alpha, nperm)$basis
+    .select_alternatives(Ys, .margin_candidates(menu, margins, "space", coords, Ys), kn_max, alpha, nperm, rows = kept)$basis
   }
   t_terms <- if (!has("time")) NULL else {
     Yt <- scale(by_time, scale = FALSE)
+    if (!is.null(kept)) Yt <- Yt[, rep(seq_len(n_s), ncol(Y)) %in% kept, drop = FALSE]   # the columns of the kept sites
     .select_alternatives(Yt, .margin_candidates(menu, margins, "time", sort(unique(index$time)), Yt), kn_max, alpha, nperm)$basis
   }
   S <- cbind(const = rep(1 / sqrt(n_s), n_s), s_terms)
@@ -332,7 +361,7 @@ print.depprep_basis <- function(x, ...) {
   cand <- vapply(seq_len(nrow(pairs)), function(i) S[sites, pairs$s[i]] * Tm[times, pairs$t[i]], numeric(nrow(Y)))
   cand <- matrix(cand, nrow(Y))
   colnames(cand) <- paste(colnames(S)[pairs$s], colnames(Tm)[pairs$t], sep = ":")
-  .forward_select(Y, cand, kn_max, alpha, nperm)
+  .forward_select(Y, cand, kn_max, alpha, nperm, rows = if (is.null(kept)) NULL else which(sites %in% kept))
 }
 
 # Share of the true large-scale structure removed by a basis (capture) and share of the

@@ -228,12 +228,12 @@ print.depprep_menu <- function(x, ...) {
 # Forward selection over alternative candidate sets: one set is the usual selection;
 # several (W = "auto") are each selected with the global test at the Sidak level for the
 # number of sets, and the selection with the largest adjusted R-squared is kept.
-.select_alternatives <- function(Y, alts, kn_max, alpha, nperm) {
-  if (length(alts) == 1) return(.forward_select(Y, alts[[1]], kn_max, alpha, nperm))
+.select_alternatives <- function(Y, alts, kn_max, alpha, nperm, rows = NULL) {
+  if (length(alts) == 1) return(.forward_select(Y, alts[[1]], kn_max, alpha, nperm, rows))
   a <- 1 - (1 - alpha)^(1 / length(alts))
   if (1 / (nperm + 1) > a) warning(sprintf("%d permutations cannot reach the Sidak level %.4f for %d graphs; use nperm >= %d.",
                                            nperm, a, length(alts), ceiling(1 / a)), call. = FALSE)
-  sels <- lapply(alts, function(cand) .forward_select(Y, cand, kn_max, a, nperm))
+  sels <- lapply(alts, function(cand) .forward_select(Y, cand, kn_max, a, nperm, rows))
   n <- nrow(Y)
   adj <- vapply(sels, function(s) { k <- length(s$terms); if (!k) -Inf else 1 - (1 - s$r2) * (n - 1) / (n - k - 1) }, 0)
   best <- if (all(!is.finite(adj))) 1 else which.max(adj)

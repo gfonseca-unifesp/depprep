@@ -205,3 +205,27 @@ test_that("union_basis() drops exact copies of a term and gives the same basis a
   expect_identical(attr(u, "terms"), c(attr(b1, "terms"), attr(b2, "terms"))[q$pivot[seq_len(q$rank)]])
   expect_identical(attr(u, "k"), q$rank)
 })
+
+test_that("terms selected on a sample of sites give a valid basis on all rows, and the full sample changes nothing", {
+  g <- sim_groups(sim_group("a", 3, "exponential", range = 0.4))
+  s <- sim_spatial(400, g, seed = 8)        # the sample must keep many more sites than candidates
+  full <- build_group_basis(s$X, coords = s$coords, type = "isotropic", seed = 2)
+  expect_identical(build_group_basis(s$X, coords = s$coords, type = "isotropic", seed = 2, sample_sites = 1), full)
+  half <- build_group_basis(s$X, coords = s$coords, type = "isotropic", seed = 2, sample_sites = 0.5)
+  expect_equal(nrow(half), 400)
+  expect_equal(unname(crossprod(unclass(half))), diag(ncol(half)), tolerance = 1e-8)
+  expect_true(all(attr(half, "terms") %in% names(attr(full, "scalogram"))))
+  expect_gt(attr(half, "k"), 0)
+  expect_lte(attr(half, "kn"), 0.25)
+  expect_identical(build_group_basis(s$X, coords = s$coords, type = "isotropic", seed = 2, sample_sites = 0.5), half)
+  expect_error(build_group_basis(s$X, coords = s$coords, type = "isotropic", sample_sites = 0), "sample_sites")
+  # space-time: the terms are products of the margins, selected on the kept sites
+  gs <- sim_groups(sim_group("st", 2, "separable_ar1", range = 0.4, phi = 0.6))
+  st <- sim_spatiotemporal(40, 24, gs, seed = 3)
+  d <- depprep:::.data_parts(st)
+  bst <- build_group_basis(st$X, coords = d$coords, index = d$index, type = "separable_ar1", seed = 1, sample_sites = 0.5)
+  expect_equal(nrow(bst), nrow(st$X))
+  expect_true(all(grepl(":", attr(bst, "terms"))))
+  cr <- correct(st, group_regimes(diagnose_variables(st)), sample_sites = 0.5)
+  expect_equal(dim(cr$X), dim(st$X))
+})
