@@ -380,7 +380,57 @@ The app opens in your default browser; close the terminal (or press Ctrl+C) to s
 To try it without your own data, click **Use example data** in step 1 (a spatial
 simulation with three groups of variables and three hidden classes).
 
-The six steps:
+### The input table
+
+One CSV file, **one row per observation**, with a header row. Some columns give the
+position of the observation; every other numeric column is a variable. Column names are
+free (you mark the position columns in step 1). The three layouts (the values below are
+illustrative):
+
+**Spatial** (one map): one row per site, with its two coordinates.
+
+| x_km | y_km | chl | sst | kd490 | poc |
+| --- | --- | --- | --- | --- | --- |
+| 412.5 | 9876.0 | 1.84 | 28.31 | 0.21 | 210.4 |
+| 440.3 | 9876.0 | 1.12 | 28.45 | 0.15 | 168.9 |
+| 412.5 | 9903.8 | 2.07 | 28.22 | 0.24 | 231.0 |
+
+**Temporal** (one series): one row per time, with a numeric time.
+
+| time | chl | sst | kd490 | poc |
+| --- | --- | --- | --- | --- |
+| 1 | 1.52 | 28.10 | 0.19 | 195.2 |
+| 2 | 1.61 | 28.34 | 0.20 | 201.7 |
+| 3 | 1.95 | 28.62 | 0.23 | 224.8 |
+
+**Space-time** (a series at every site): one row per site and time, with a site
+identifier, the site's coordinates (repeated on each of its rows) and the time.
+
+| site | x_km | y_km | time | chl | sst | kd490 | poc |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 412.5 | 9876.0 | 1 | 1.84 | 28.31 | 0.21 | 210.4 |
+| 1 | 412.5 | 9876.0 | 2 | 1.90 | 28.40 | 0.22 | 214.1 |
+| 2 | 440.3 | 9876.0 | 1 | 1.12 | 28.45 | 0.15 | 168.9 |
+| 2 | 440.3 | 9876.0 | 2 | 1.20 | 28.51 | 0.16 | 172.3 |
+
+Rules:
+
+- **At least two numeric variables**, and **no missing values** in the variables, the
+  coordinates or the time (fill or drop them before; gaps are not supported yet).
+- **Time is a number**: a month counter (1, 2, 3, ...) or a decimal year (2015.25), not a
+  date text such as "2015-04". Equal steps are expected.
+- **Coordinates in a projected system** (for example UTM, in km or m). Longitude and
+  latitude in degrees are accepted with a warning, since distances in degrees are
+  distorted away from the equator.
+- **Space-time needs a complete grid**: every site has a row at every time, once.
+- Text columns (names, dates as text, labels) are ignored as variables; you can keep them
+  in the file.
+
+The same layouts work in code: `diagnose_variables()` takes the matrix of variables with
+`coords` (spatial), `time` (temporal), or `coords` of the sites plus `index` (a data
+frame with the `site` and `time` of each row, space-time).
+
+### The six steps
 
 | Step | What you do | What you get |
 | --- | --- | --- |
