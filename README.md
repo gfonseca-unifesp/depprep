@@ -425,13 +425,22 @@ position of the observation; every other numeric column is a variable. Column na
 free (you mark the position columns in step 1). The three layouts (the values below are
 illustrative):
 
-**Spatial** (one map): one row per site, with its two coordinates.
+**Spatial** (one map): one row per site, with its two coordinates, either in km (or m)
+of a projected system or as longitude and latitude in degrees.
 
 | x_km | y_km | chl | sst | kd490 | poc |
 | --- | --- | --- | --- | --- | --- |
 | 412.5 | 9876.0 | 1.84 | 28.31 | 0.21 | 210.4 |
 | 440.3 | 9876.0 | 1.12 | 28.45 | 0.15 | 168.9 |
 | 412.5 | 9903.8 | 2.07 | 28.22 | 0.24 | 231.0 |
+
+or
+
+| lon | lat | chl | sst | kd490 | poc |
+| --- | --- | --- | --- | --- | --- |
+| -48.125 | 1.375 | 1.84 | 28.31 | 0.21 | 210.4 |
+| -47.875 | 1.375 | 1.12 | 28.45 | 0.15 | 168.9 |
+| -48.125 | 1.625 | 2.07 | 28.22 | 0.24 | 231.0 |
 
 **Temporal** (one series): one row per time, with a numeric time.
 
@@ -457,9 +466,14 @@ Rules:
   coordinates or the time (fill or drop them before; gaps are not supported yet).
 - **Time is a number**: a month counter (1, 2, 3, ...) or a decimal year (2015.25), not a
   date text such as "2015-04". Equal steps are expected.
-- **Coordinates in a projected system** (for example UTM, in km or m). Longitude and
-  latitude in degrees are accepted with a warning, since distances in degrees are
-  distorted away from the equator.
+- **Coordinates in km (or m) or in degrees.** Projected coordinates (for example UTM)
+  work anywhere. Longitude and latitude in degrees work near the equator: they treat a
+  degree of longitude as a degree of latitude, while it is shorter by a factor of
+  cos(latitude), only 1.2% at 9 degrees (the north of the Foz do Amazonas basin). The app
+  shows that difference, and asks you to project the coordinates when it exceeds 2%
+  (beyond about 11 degrees of latitude). If the file has both pairs, mark the one you
+  want; the app leaves columns named like coordinates (`x`, `y`, `lon`, `lat`, `x_km`,
+  `easting`, ...) out of the variables it proposes.
 - **Space-time needs a complete grid**: every site has a row at every time, once.
 - Text columns (names, dates as text, labels) are ignored as variables; you can keep them
   in the file.
@@ -476,7 +490,7 @@ They are built from monthly Level-3 satellite fields of the marine Foz do Amazon
 
 | File | Layout | Rows | Columns |
 | --- | --- | --- | --- |
-| `foz_ocean_map.csv` | spatial | 544 cells | `x_km`, `y_km` (cell centres, SIRGAS 2000 / Brazil Mercator, EPSG:5641), then the mean of each variable over its cloud-free months |
+| `foz_ocean_map.csv` | spatial | 544 cells | the cell centres twice, `x_km`, `y_km` (SIRGAS 2000 / Brazil Mercator, EPSG:5641) and `lon`, `lat` (degrees), then the mean of each variable over its cloud-free months |
 | `foz_ocean_series.csv` | temporal | 79 months | `month` (text, ignored as a variable), `time` (1 to 79), then the basin mean of each variable in that month |
 | `foz_ocean_sources.csv` | — | 5 variables | name, unit, ERDDAP dataset, provider and licence of each variable |
 
@@ -494,13 +508,14 @@ which will work on every cell and month.
 In the app, download a file (for example
 [foz_ocean_map.csv](https://raw.githubusercontent.com/gfonseca-unifesp/depprep/main/inst/extdata/foz_ocean_map.csv)
 or [foz_ocean_series.csv](https://raw.githubusercontent.com/gfonseca-unifesp/depprep/main/inst/extdata/foz_ocean_series.csv))
-and load it in step 1, marking `x_km` and `y_km` (spatial) or `time` (temporal). In code:
+and load it in step 1, marking `x_km` and `y_km` or `lon` and `lat` (spatial; the
+cells lie between the equator and 9 N, so both work), or `time` (temporal). In code:
 
 ```r
 library(depprep)
 map <- read.csv(system.file("extdata", "foz_ocean_map.csv", package = "depprep"))
 X   <- as.matrix(map[, c("chl", "par", "poc", "sst", "wind_x")])
-xy  <- as.matrix(map[, c("x_km", "y_km")])
+xy  <- as.matrix(map[, c("x_km", "y_km")])         # or map[, c("lon", "lat")]
 gr  <- group_regimes(diagnose_variables(X, coords = xy))
 cr  <- correct(X, gr, coords = xy)                 # about half a minute
 v   <- verify(cr, X, coords = xy)
@@ -522,8 +537,9 @@ crt <- correct(Xt, group_regimes(diagnose_variables(Xt, time = series$time)), ti
 | 6. Export | Download the results | The corrected data (CSV), the corrected correlation matrix (CSV), the HTML report of `report_correction()` and the R code |
 
 Limits shown in the app: missing values are not supported yet, coordinates in degrees
-should be projected first, and data with more than a few thousand observations are slow
-(the correction of a 628-site x 93-month grid takes hours).
+should be projected beyond about 11 degrees of latitude, and data with more than a few
+thousand observations are slow (the correction of a 628-site x 93-month grid takes
+hours).
 
 ## 11. Known limits
 
@@ -585,8 +601,9 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
 - **Missing values.** The diagnosis, the bases and the correction stop on missing values.
 - **Filters other than the autoregressive ones** (SAR/CAR whitening in space, STAR for
   moving patterns) are not implemented.
-- **Coordinates in degrees** should be projected first; distances in degrees are
-  distorted away from the equator.
+- **Coordinates in degrees** are used as they are, with a degree of longitude taken as a
+  degree of latitude: fine near the equator, but beyond about 11 degrees of latitude
+  they should be projected first (section 10).
 
 ## 12. Reproducibility
 

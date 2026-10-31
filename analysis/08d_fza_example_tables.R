@@ -22,7 +22,10 @@
 # months; every month must have each variable valid in at least 10% of those cells (the
 # script stops otherwise, so the series has no gap). The lowest is particulate organic
 # carbon in 2016-02, with 14% of the cells; a first rule of 25% failed on that month.
-# Coordinates: cell centres projected to SIRGAS 2000 / Brazil Mercator (EPSG:5641), in km.
+# Coordinates: the cell centres twice, projected to SIRGAS 2000 / Brazil Mercator
+# (EPSG:5641, x_km and y_km) and in degrees (lon and lat); either pair can be used, since
+# near the equator (latitudes up to 9 degrees here) a degree of longitude is at most about
+# 1% shorter than a degree of latitude.
 # No random numbers are used.
 #
 # Requires results/fza/study_area.rds (analysis/01a_fza_study_area.R) and the raw files of
@@ -79,7 +82,7 @@ names(values) <- sources$variable
 valid_months <- sapply(values, function(m) rowMeans(!is.na(m)))
 keep <- apply(valid_months >= min_months, 1, all)
 xy <- st_coordinates(st_transform(st_as_sf(cells[keep, ], coords = c("lon", "lat"), crs = 4326), 5641)) / 1000
-map <- data.frame(x_km = round(xy[, 1], 2), y_km = round(xy[, 2], 2),
+map <- data.frame(x_km = round(xy[, 1], 2), y_km = round(xy[, 2], 2), lon = cells$lon[keep], lat = cells$lat[keep],
                   sapply(values, function(m) signif(rowMeans(m[keep, ], na.rm = TRUE), 5)))
 
 # --- The series: basin means over the cells of the map ------------------------------------
