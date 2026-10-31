@@ -106,3 +106,12 @@ test_that("the subspace level separates variables of the same regime with indepe
   expect_equal(mclust::adjustedRandIndex(gr_o$group, gr$group[o]), 1)
   expect_error(group_regimes(sig, split = "subspace"), "required")
 })
+
+test_that("one dependent variable makes one group, without a warning", {
+  g <- sim_groups(sim_group("a", 1, "exponential", range = 0.5), sim_group("none", 2, "none"))
+  s <- sim_spatial(150, g, seed = 2)
+  sig <- diagnose_variables(s)
+  sig$moran_p <- c(0.001, 0.9, 0.8); sig$dependence_p <- sig$moran_p; sig$correlogram_p <- sig$moran_p
+  gr <- expect_silent(group_regimes(sig))
+  expect_identical(gr$group, c("g1", "none", "none"))
+})

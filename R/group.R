@@ -97,6 +97,8 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust",
     Z <- .grouping_components(signature[dep, , drop = FALSE])
     fit <- if (method == "type") {
       list(cluster = as.integer(factor(type[dep])), k = length(unique(type[dep])), silhouette = NA_real_, tree = NULL)
+    } else if (sum(dep) == 1) {
+      list(cluster = 1L, k = 1L, silhouette = NA_real_, tree = NULL)     # one dependent variable: one group
     } else .cluster(Z, method, n_groups, max_groups, min_silhouette)
     # groups named g1, g2, ... by decreasing size
     lab <- names(sort(table(fit$cluster), decreasing = TRUE))
