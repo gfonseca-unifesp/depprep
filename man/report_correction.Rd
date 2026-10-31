@@ -13,7 +13,9 @@ report_correction(
   time = NULL,
   index = NULL,
   code = NULL,
-  title = "depprep: correction report"
+  title = "depprep: correction report",
+  signature = NULL,
+  grouping = NULL
 )
 }
 \arguments{
@@ -31,17 +33,26 @@ report_correction(
 template built from the settings of \code{corrected}.}
 
 \item{title}{Title of the report.}
+
+\item{signature}{Output of \code{\link[=diagnose_variables]{diagnose_variables()}} used for the correction; computed
+again (without bootstrap) when \code{NULL}.}
+
+\item{grouping}{Output of \code{\link[=group_regimes]{group_regimes()}} (or the grouping given to \code{\link[=correct]{correct()}}),
+for the regime, group and stability of each variable; when \code{NULL}, the groups of
+\code{corrected}.}
 }
 \value{
 The path of the file, invisibly.
 }
 \description{
 Writes one self-contained HTML file (no external files, no pandoc) that says what the
-correction did, in the order a user checks it: the bases of each group and the
-degrees of freedom they used, how much of each variable was removed, the
-autocorrelation before and after, how the correlations between variables changed
-(Delta R), the warning of signal at the scale of the basis (Q3), where local structure
-is left (LISA, in space), the warnings, and the R code that reproduces the correction.
+data showed before the correction and what the correction did, in the order a user
+checks it: the diagnosis of each variable (its dependence signature, regime, group and
+stability), the bases of each group and the degrees of freedom they used, how much of
+each variable was removed, the autocorrelation and the tests of structure before and
+after (Moran correlograms and local Moran's I in space, Ljung-Box in time), how the
+correlations between variables changed (Delta R), the warning of signal at the scale
+of the basis (Q3), the warnings, and the R code that reproduces the correction.
 }
 \examples{
 \donttest{
