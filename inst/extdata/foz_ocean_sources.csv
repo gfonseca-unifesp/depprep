@@ -1,0 +1,6 @@
+"variable","name","unit","erddap_id","server","provider","license"
+"chl","chlorophyll-a","mg m-3","erdMH1chlamday_R2022SQ","https://coastwatch.pfeg.noaa.gov/erddap","NASA GSFC OBPG (Aqua MODIS)","NASA Earth science data and information policy (free use, with attribution)"
+"par","photosynthetically available radiation","einstein m-2 day-1","erdMH1par0mday_R2022SQ","https://coastwatch.pfeg.noaa.gov/erddap","NASA GSFC OBPG (Aqua MODIS)","NASA Earth science data and information policy (free use, with attribution)"
+"poc","particulate organic carbon","mg m-3","erdMPOCmday","https://coastwatch.pfeg.noaa.gov/erddap","NASA GSFC OBPG (Aqua MODIS)","NASA Earth science data and information policy (free use, with attribution)"
+"sst","sea surface temperature (day)","degree C","erdMH1sstdmdayR20190SQ","https://coastwatch.pfeg.noaa.gov/erddap","NASA GSFC OBPG (Aqua MODIS)","free use and redistribution (NOAA ERD); no warranty"
+"wind_x","eastward wind","m s-1","erdQMwindmday_LonPM180","https://coastwatch.pfeg.noaa.gov/erddap","NOAA NMFS SWFSC ERD (Metop ASCAT)","free use and redistribution (NOAA ERD); no warranty"
