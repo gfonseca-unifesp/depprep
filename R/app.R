@@ -151,7 +151,8 @@ run_app <- function(launch.browser = interactive()) {
     sprintf("v <- verify(cr, X, %s)", pos),
     "write.csv(cr$X, \"corrected_data.csv\", row.names = FALSE)",
     "write.csv(cr$R, \"corrected_R.csv\")",
-    sprintf("report_correction(cr, X, v, file = \"depprep_report.html\", %s)", pos))
+    "write.csv(diagnosis_table(sig, grouping), \"diagnosis.csv\", row.names = FALSE)",
+    sprintf("report_correction(cr, X, v, file = \"depprep_report.html\", signature = sig, grouping = grouping, %s)", pos))
 }
 
 .menu_code <- function(m) {
@@ -201,7 +202,8 @@ run_app <- function(launch.browser = interactive()) {
       shiny::tabPanel("3. Diagnosis",
         shiny::p(class = "help", "Each variable is diagnosed alone (variogram or ACF), never through its correlations with the others. Variables with similar signatures form a group that shares one basis."),
         shiny::actionButton("diagnose", "Diagnose"),
-        shiny::tableOutput("signatures"),
+        shiny::div(style = "overflow-x:auto", shiny::tableOutput("signatures")),
+        shiny::downloadButton("dl_diag", "Diagnosis (CSV)"),
         shiny::fluidRow(shiny::column(4, shiny::uiOutput("plot_var")), shiny::column(8, shiny::plotOutput("diag_plot", height = 300))),
         shiny::h4("Change a regime by hand"),
         shiny::uiOutput("override_ui"),
@@ -232,6 +234,8 @@ run_app <- function(launch.browser = interactive()) {
         shiny::downloadButton("dl_r", "Corrected correlation matrix (CSV)"),
         shiny::downloadButton("dl_report", "Report (HTML)"),
         shiny::downloadButton("dl_code", "R code"),
+        shiny::downloadButton("dl_diag6", "Diagnosis before the correction (CSV)"),
+        shiny::downloadButton("dl_lisa", "Local Moran's I before and after (CSV, space)"),
         shiny::hr(),
         shiny::p(class = "help", "Limits: missing values are not supported yet; project coordinates in degrees beyond about 11 degrees of latitude; filters such as SAR/CAR or STAR are not in the menu."))))
 }
@@ -292,10 +296,7 @@ run_app <- function(launch.browser = interactive()) {
   })
   output$signatures <- shiny::renderTable({
     shiny::req(rv$grouping, rv$sig)
-    s <- rv$sig; g <- rv$grouping
-    cols <- intersect(c("dependence_p", "range", "nugget_ratio", "aniso_ratio", "phi", "period", "trend_r2", "shift_indicator"), names(s))
-    keep <- cols[vapply(cols, function(k) any(is.finite(s[[k]])), TRUE)]
-    cbind(g[, c("variable", "type", "group")], signif(s[match(g$variable, s$variable), keep, drop = FALSE], 3))
+    diagnosis_table(rv$sig, rv$grouping)
   })
   output$plot_var <- shiny::renderUI({ shiny::req(input$variables); shiny::selectInput("pvar", "Plot of", input$variables) })
   output$diag_plot <- shiny::renderPlot({
@@ -431,7 +432,15 @@ run_app <- function(launch.browser = interactive()) {
   output$dl_r <- shiny::downloadHandler("corrected_R.csv", function(f) utils::write.csv(rv$cr$R, f))
   output$dl_report <- shiny::downloadHandler("depprep_report.html", function(f) {
     d <- dat()
-    do.call(report_correction, c(list(rv$cr, d$X, rv$v, file = f, code = code_text()), pos_args(d)))
+    do.call(report_correction, c(list(rv$cr, d$X, rv$v, file = f, code = code_text(), signature = rv$sig, grouping = rv$grouping),
+                                 pos_args(d)))
+  })
+  dl_diagnosis <- shiny::downloadHandler("diagnosis.csv", function(f) utils::write.csv(diagnosis_table(rv$sig, rv$grouping), f, row.names = FALSE))
+  output$dl_diag <- dl_diagnosis
+  output$dl_diag6 <- dl_diagnosis
+  output$dl_lisa <- shiny::downloadHandler("lisa_before_after.csv", function(f) {
+    shiny::req(rv$v, !is.null(rv$v$lisa))
+    utils::write.csv(rbind(cbind(when = "before", rv$v$lisa_before), cbind(when = "after", rv$v$lisa)), f, row.names = FALSE)
   })
   code_text <- shiny::reactive({
     d <- dat(); st <- settings()
