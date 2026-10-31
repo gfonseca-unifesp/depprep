@@ -88,7 +88,8 @@
 #'   Linux and macOS, a socket cluster on Windows.
 #' @param sample_sites Share of the sites on which the terms of every basis are selected
 #'   (spatial and spatio-temporal data), passed to [build_group_basis()]; 1 (the
-#'   default) uses all of them. Experimental (decision D25).
+#'   default) uses all of them. Experimental and off by default: it saves time but the
+#'   bases capture less of the large-scale structure (see [build_group_basis()]).
 #' @return An object of class `depprep_corrected`: a list with `R`, `R_pairwise`
 #'   (before the projection), `adjustment`, `X` (residuals or whitened data; `NULL` in
 #'   scale mode), `R_scale`, `r2_scale`, `p_scale`, `bands` and `scalogram` (scale

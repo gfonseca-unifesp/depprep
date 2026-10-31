@@ -68,7 +68,8 @@ Linux and macOS, a socket cluster on Windows.}
 
 \item{sample_sites}{Share of the sites on which the terms of every basis are selected
 (spatial and spatio-temporal data), passed to \code{\link[=build_group_basis]{build_group_basis()}}; 1 (the
-default) uses all of them. Experimental (decision D25).}
+default) uses all of them. Experimental and off by default: it saves time but the
+bases capture less of the large-scale structure (see \code{\link[=build_group_basis]{build_group_basis()}}).}
 }
 \value{
 An object of class \code{depprep_corrected}: a list with \code{R}, \code{R_pairwise}

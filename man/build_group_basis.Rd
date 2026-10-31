@@ -56,8 +56,11 @@ selected, to save time on large grids (spatial and spatio-temporal data; all tim
 are kept). The sites are drawn with \code{seed}; the selected terms are then taken on all
 rows. With 1 (the default) every site is used and nothing changes. The sample must
 keep many more rows than candidates, or the tests lose power (with 100 sites and 61
-candidate maps, the global test fails); it is meant for large grids. Experimental:
-it changes the bases and is being checked against the full selection (decision D25).}
+candidate maps, the global test fails). Experimental and off by default (decision
+D25): on 200 sites x 93 times, half of the sites cut the time to about a third, but
+fewer terms passed the tests and the bases captured less of the large-scale
+structure (0.49 to 0.41 of it with a structured truth; 0.25 with a quarter of the
+sites). To save time with the same result, use \code{cores} in \code{\link[=correct]{correct()}}.}
 }
 \value{
 A matrix with orthonormal columns (one row per observation) of class
