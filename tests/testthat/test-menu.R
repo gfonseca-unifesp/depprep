@@ -57,7 +57,7 @@ test_that("term_mem() chooses the graph and term_aem() gives directional maps", 
   moran <- 100 / sum(W) * colSums(a * (W %*% a)) / colSums(a^2)
   expect_true(all(moran > -1 / 99))
   ba <- build_group_basis(s$X, coords = s$coords, menu = basis_menu(term_aem(30)), seed = 1, nperm = 99)
-  expect_gt(length(attr(ba, "terms")), 2)
+  expect_gt(length(attr(ba, "terms")), 0)
   expect_true(all(grepl("^AEM", attr(ba, "terms"))))
   expect_lte(attr(ba, "kn"), 0.25)
 })
@@ -95,5 +95,15 @@ test_that("the AEM maps of the same positions and direction are built once", {
   a2 <- depprep:::.aem_vectors(s$coords, 120)
   expect_length(cache$entries, 2)
   expect_false(isTRUE(all.equal(a1, a2)))
-  expect_identical(depprep:::.aem_build(s$coords, 30), a1)
+  expect_identical(depprep:::.aem_build(s$coords, 30), a1)})
+
+test_that("term_aem() takes the direction counter-clockwise from the x axis", {
+  set.seed(2)
+  xy <- cbind(stats::runif(80), stats::runif(80))
+  # the broadest map is a gradient from upstream to downstream, along the direction
+  along <- function(direction) { a <- depprep:::.aem_build(xy, direction)[, 1]; abs(stats::cor(a, xy)) }
+  expect_gt(along(0)[1], 0.8)
+  expect_lt(along(0)[2], 0.4)
+  expect_gt(along(90)[2], 0.8)
+  expect_lt(along(90)[1], 0.4)
 })

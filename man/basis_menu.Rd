@@ -32,7 +32,8 @@ there are coordinates).}
 
 \item{W}{Spatial weights of the maps (see above).}
 
-\item{direction}{Direction of the process, in degrees.}
+\item{direction}{Direction toward which the process flows, in degrees counter-clockwise
+from the x axis.}
 }
 \value{
 \code{basis_menu()} returns a list of terms of class \code{depprep_menu}; each \verb{term_*()}
@@ -66,8 +67,9 @@ selection has the largest adjusted R-squared, with the global test at the Sidak
 level for the number of graphs tried (Bauman et al. 2018). \code{margin = "time"} gives
 the temporal maps;
 \item \code{term_aem(direction)}: asymmetric eigenvector maps (Blanchet et al. 2008) on the
-Delaunay graph oriented by \code{direction} (degrees, counter-clockwise from the x
-axis), for directional processes such as a current or a plume.
+Delaunay graph oriented by \code{direction}, the direction the process flows toward
+(degrees, counter-clockwise from the x axis: 0 toward +x or east, 90 toward +y or
+north), for directional processes such as a current or a plume.
 }
 
 In space-time the spatial terms (\code{term_trend()}, \code{term_mem()}, \code{term_aem()}) and the

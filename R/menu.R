@@ -25,8 +25,9 @@
 #'   level for the number of graphs tried (Bauman et al. 2018). `margin = "time"` gives
 #'   the temporal maps;
 #' * `term_aem(direction)`: asymmetric eigenvector maps (Blanchet et al. 2008) on the
-#'   Delaunay graph oriented by `direction` (degrees, counter-clockwise from the x
-#'   axis), for directional processes such as a current or a plume.
+#'   Delaunay graph oriented by `direction`, the direction the process flows toward
+#'   (degrees, counter-clockwise from the x axis: 0 toward +x or east, 90 toward +y or
+#'   north), for directional processes such as a current or a plume.
 #'
 #' In space-time the spatial terms (`term_trend()`, `term_mem()`, `term_aem()`) and the
 #' temporal ones (`term_trend()`, `term_cycle()`, `term_mem(margin = "time")`) form the
@@ -41,7 +42,8 @@
 #' @param W Spatial weights of the maps (see above).
 #' @param margin `"space"` or `"time"`; `NULL` for the margin of the data (space when
 #'   there are coordinates).
-#' @param direction Direction of the process, in degrees.
+#' @param direction Direction toward which the process flows, in degrees counter-clockwise
+#'   from the x axis.
 #' @return `basis_menu()` returns a list of terms of class `depprep_menu`; each `term_*()`
 #'   returns one term (class `depprep_term`).
 #' @references Bauman, D., Drouet, T., Fortin, M.-J. and Dray, S. (2018). Optimizing the
@@ -186,7 +188,8 @@ print.depprep_menu <- function(x, ...) {
   if (length(out) == 1) out[[1]] else stats::setNames(out, codes)
 }
 
-# Asymmetric eigenvector maps on the Delaunay graph oriented by `direction` (degrees).
+# Asymmetric eigenvector maps on the Delaunay graph oriented by `direction` (degrees,
+# counter-clockwise from the x axis, toward which the process flows).
 # Only the maps with positive autocorrelation on the graph (Moran's I above its
 # expectation) are kept, as for the dbMEM: all n - 1 maps span almost every pattern, and
 # the global test of the selection would have no power.
@@ -204,7 +207,7 @@ print.depprep_menu <- function(x, ...) {
 .aem_build <- function(coords, direction) {
   nb <- spdep::tri2nb(coords)
   b <- adespatial::aem.build.binary(nb.object = nb, coords = cbind(seq_len(nrow(coords)), coords),
-                                    rot.angle = direction, plot.connexions = FALSE)
+                                    rot.angle = 90 - direction, plot.connexions = FALSE)   # aem.build.binary() flows toward +y at 0
   a <- adespatial::aem(aem.build.binary = b)
   m <- a$vectors[, a$values > 1e-8, drop = FALSE]
   W <- spdep::nb2mat(nb, style = "B")
