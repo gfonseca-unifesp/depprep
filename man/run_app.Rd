@@ -30,8 +30,14 @@ before and after;
 }
 }
 \details{
-Limits shown in the app: missing values are not supported yet; coordinates in degrees
-should be projected first; large data (over a few thousand observations) are slow.
+Coordinates can be projected (for example in km) or longitude and latitude in degrees.
+Degrees treat a degree of longitude as a degree of latitude, which holds near the
+equator; the app says how much shorter a degree of longitude is at the largest latitude
+of the data, and asks to project them when that exceeds 2\% (beyond about 11 degrees of
+latitude).
+
+Limits shown in the app: missing values are not supported yet; large data (over a few
+thousand observations) are slow.
 Needs the shiny package.
 }
 \examples{

@@ -14,8 +14,14 @@
 #' 6. download the corrected data, the correlation matrix, the report
 #'    ([report_correction()]) and the R code that reproduces everything.
 #'
-#' Limits shown in the app: missing values are not supported yet; coordinates in degrees
-#' should be projected first; large data (over a few thousand observations) are slow.
+#' Coordinates can be projected (for example in km) or longitude and latitude in degrees.
+#' Degrees treat a degree of longitude as a degree of latitude, which holds near the
+#' equator; the app says how much shorter a degree of longitude is at the largest latitude
+#' of the data, and asks to project them when that exceeds 2% (beyond about 11 degrees of
+#' latitude).
+#'
+#' Limits shown in the app: missing values are not supported yet; large data (over a few
+#' thousand observations) are slow.
 #' Needs the shiny package.
 #'
 #' @param launch.browser Open the app in the browser.
@@ -38,7 +44,7 @@ run_app <- function(launch.browser = interactive()) {
 .app_data <- function(df, family, x = NULL, y = NULL, time = NULL, site = NULL, variables = NULL) {
   family <- match.arg(family, c("spatial", "temporal", "spatiotemporal"))
   pos_cols <- c(x, y, time, site)
-  if (is.null(variables)) variables <- setdiff(names(df)[vapply(df, is.numeric, TRUE)], pos_cols)
+  if (is.null(variables)) variables <- setdiff(names(df)[vapply(df, is.numeric, TRUE) & !.coord_like(names(df))], pos_cols)
   variables <- setdiff(variables, pos_cols)
   if (length(variables) < 2) stop("Choose at least two numeric variables.", call. = FALSE)
   X <- as.matrix(df[, variables, drop = FALSE])
@@ -51,7 +57,16 @@ run_app <- function(launch.browser = interactive()) {
     lonlat_names <- any(grepl("^(lon|long|longitude|lat|latitude)$", c(x, y), ignore.case = TRUE))
     in_bounds <- all(abs(xy[, 1]) <= 180, na.rm = TRUE) && all(abs(xy[, 2]) <= 90, na.rm = TRUE)
     if (in_bounds && (lonlat_names || diff(range(xy[, 1], na.rm = TRUE)) > 5)) {
-      notes <- c(notes, "The coordinates look like degrees: distances in degrees are distorted away from the equator; project them (for example to UTM, in km) first.")
+      # one degree of longitude is cos(latitude) times one degree of latitude
+      lat_max <- max(abs(xy[, 2]), na.rm = TRUE)
+      shrink <- 1 - cos(lat_max * pi / 180)
+      notes <- c(notes, if (shrink <= 0.02) {
+        sprintf("The coordinates look like longitude and latitude in degrees. Near the equator this is fine: up to latitude %.0f, a degree of longitude is at most %.1f%% shorter than a degree of latitude.",
+                lat_max, 100 * shrink)
+      } else {
+        sprintf("The coordinates look like longitude and latitude in degrees: at latitude %.0f, a degree of longitude is %.0f%% shorter than a degree of latitude, so east-west distances would be overstated. Project them (for example to UTM, in km) first.",
+                lat_max, 100 * shrink)
+      })
     }
   }
   if (family == "spatial") out$coords <- xy
@@ -70,6 +85,16 @@ run_app <- function(launch.browser = interactive()) {
   if (nrow(X) > 3000) notes <- c(notes, sprintf("%d observations: the diagnosis and the correction can take minutes.", nrow(X)))
   out$notes <- notes
   out
+}
+
+# Columns whose names look like coordinates (x, y, lon, lat, easting, northing, with an
+# optional unit such as x_km or lon_deg): the app guesses x and y from them and leaves
+# them out of the variables it proposes.
+.coord_like <- function(nm, axis = c("any", "x", "y")) {
+  axis <- match.arg(axis)
+  stem <- switch(axis, x = "x|lon|long|longitude|easting", y = "y|lat|latitude|northing",
+                 any = "x|y|lon|long|longitude|lat|latitude|easting|northing")
+  grepl(sprintf("^(%s)([_.]?(km|m|deg))?$", stem), nm, ignore.case = TRUE)
 }
 
 # Change the regime of some variables by hand: each gets the group "manual_<type>" (or
@@ -160,7 +185,7 @@ run_app <- function(launch.browser = interactive()) {
     shiny::titlePanel("depprep: dependence-aware preprocessing"),
     shiny::navlistPanel(id = "step", widths = c(2, 10),
       shiny::tabPanel("1. Data",
-        shiny::p(class = "help", "Load a CSV with one row per observation. Mark the columns of the positions; the other numeric columns are the variables."),
+        shiny::p(class = "help", "Load a CSV with one row per observation. Mark the columns of the positions (coordinates in km or m, or longitude and latitude in degrees); the other numeric columns are the variables."),
         shiny::fileInput("file", "CSV file", accept = ".csv"),
         shiny::actionButton("example", "Use example data (spatial simulation)"),
         shiny::radioButtons("family", "Data", c("Spatial" = "spatial", "Temporal" = "temporal", "Space-time" = "spatiotemporal"), inline = TRUE),
@@ -208,7 +233,7 @@ run_app <- function(launch.browser = interactive()) {
         shiny::downloadButton("dl_report", "Report (HTML)"),
         shiny::downloadButton("dl_code", "R code"),
         shiny::hr(),
-        shiny::p(class = "help", "Limits: missing values are not supported yet; project coordinates in degrees first; filters such as SAR/CAR or STAR are not in the menu."))))
+        shiny::p(class = "help", "Limits: missing values are not supported yet; project coordinates in degrees beyond about 11 degrees of latitude; filters such as SAR/CAR or STAR are not in the menu."))))
 }
 
 # --- Server ---------------------------------------------------------------------------
@@ -226,12 +251,14 @@ run_app <- function(launch.browser = interactive()) {
     shiny::req(rv$df)
     nm <- names(rv$df)
     guess <- function(p) { m <- grep(p, nm, ignore.case = TRUE, value = TRUE); if (length(m)) m[1] else NULL }
+    guess_xy <- function(axis) { m <- nm[.coord_like(nm, axis)]; if (length(m)) m[1] else NULL }
     shiny::tagList(
-      if (input$family != "temporal") shiny::fluidRow(shiny::column(3, shiny::selectInput("x", "x column", nm, guess("^(x|lon|long|longitude|easting)$"))),
-                                                   shiny::column(3, shiny::selectInput("y", "y column", nm, guess("^(y|lat|latitude|northing)$")))),
+      if (input$family != "temporal") shiny::fluidRow(shiny::column(3, shiny::selectInput("x", "x column (km, m or longitude)", nm, guess_xy("x"))),
+                                                   shiny::column(3, shiny::selectInput("y", "y column (km, m or latitude)", nm, guess_xy("y")))),
       if (input$family != "spatial") shiny::fluidRow(shiny::column(3, shiny::selectInput("time", "time column", nm, guess("^(t|time|date|month|year)$"))),
         if (input$family == "spatiotemporal") shiny::column(3, shiny::selectInput("site", "site column", nm, guess("^(site|station|pixel|id)$")))),
-      shiny::selectizeInput("variables", "Variables", num_cols(), setdiff(num_cols(), c(input$x, input$y, input$time, input$site)), multiple = TRUE))
+      shiny::selectizeInput("variables", "Variables", num_cols(),
+                            setdiff(num_cols()[!.coord_like(num_cols())], c(input$x, input$y, input$time, input$site)), multiple = TRUE))
   })
   dat <- shiny::reactive({
     shiny::req(rv$df, input$variables)

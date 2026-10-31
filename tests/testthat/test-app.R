@@ -1,3 +1,10 @@
+test_that(".coord_like() finds the coordinate columns, with or without a unit", {
+  nm <- c("x_km", "y_km", "lon", "lat", "Longitude", "x", "easting", "chl", "sst", "lat2", "max")
+  expect_identical(nm[depprep:::.coord_like(nm)], c("x_km", "y_km", "lon", "lat", "Longitude", "x", "easting"))
+  expect_identical(nm[depprep:::.coord_like(nm, "x")], c("x_km", "lon", "Longitude", "x", "easting"))
+  expect_identical(nm[depprep:::.coord_like(nm, "y")], c("y_km", "lat"))
+})
+
 test_that(".app_data() reads the positions of each family and checks the data", {
   df <- depprep:::.app_example()
   d <- depprep:::.app_data(df, "spatial", x = "x", y = "y")
@@ -7,6 +14,10 @@ test_that(".app_data() reads the positions of each family and checks the data", 
   expect_length(d$notes, 0)
   deg <- df; deg$x <- deg$x * 50 - 50; deg$y <- deg$y * 10
   expect_match(depprep:::.app_data(deg, "spatial", x = "x", y = "y")$notes, "degrees")
+  # near the equator degrees are accepted; far from it the app asks to project them
+  expect_match(depprep:::.app_data(deg, "spatial", x = "x", y = "y")$notes, "Near the equator this is fine")
+  deg$y <- deg$y + 50
+  expect_match(depprep:::.app_data(deg, "spatial", x = "x", y = "y")$notes, "Project them")
   bad <- df; bad[3, 4] <- NA
   expect_error(depprep:::.app_data(bad, "spatial", x = "x", y = "y"), "missing values")
   expect_error(depprep:::.app_data(df, "temporal"), "time column")
