@@ -269,6 +269,12 @@ test_that("the bases built on several cores are the same as on one", {
   expect_identical(two$variable_bases, one$variable_bases)
   glob <- correct(s, gr, scope = "global", seed = 3)
   expect_identical(correct(s, gr, scope = "global", seed = 3, cores = 2)$bases, glob$bases)
+  # a seed given as a variable of the global environment, as in a script: the processes
+  # must get its value, not look the name up in their own global environment
+  assign("depprep_test_seed", 3, envir = globalenv())
+  on.exit(rm("depprep_test_seed", envir = globalenv()), add = TRUE)
+  from_var <- eval(as.call(list(correct, s, gr, scope = "groups", seed = quote(depprep_test_seed), cores = 2)), globalenv())
+  expect_identical(from_var$variable_bases, one$variable_bases)
   expect_identical(depprep:::.lapply_cores(1:3, function(i) i^2, 2), list(1, 4, 9))
   expect_error(depprep:::.lapply_cores(1:2, function(i) stop("boom ", i), 2), "boom")
 })

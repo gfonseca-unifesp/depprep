@@ -153,6 +153,7 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   args <- switch(family, spatial = list(coords = coords), temporal = list(time = time),
                  spatiotemporal = list(coords = coords, index = index))
   if (sample_sites < 1 && family != "temporal") args$sample_sites <- sample_sites
+  force(seed); force(period)                               # the processes get values, not names to look up
   pool <- .pool(cores)                                     # processes made on first use, closed on exit
   on.exit(.pool_close(pool), add = TRUE)
   n <- nrow(X)
