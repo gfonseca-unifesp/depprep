@@ -1,5 +1,11 @@
 # depprep 0.1.0
 
+## Drivers (stage 9)
+
+* `variation_partition()` splits the variance of each variable into the parts explained
+  by its position only, by the drivers only, by both, and the residual, with adjusted
+  R-squared (Peres-Neto et al. 2006).
+
 ## Package, menu and interface (stage 8)
 
 * `basis_menu()` with `term_trend()`, `term_cycle()`, `term_mem()` and `term_aem()`:
