@@ -90,13 +90,30 @@
 #'   (spatial and spatio-temporal data), passed to [build_group_basis()]; 1 (the
 #'   default) uses all of them. Experimental and off by default: it saves time but the
 #'   bases capture less of the large-scale structure (see [build_group_basis()]).
+#' @param covariates Optional drivers to condition on (decision D15): a numeric matrix or
+#'   data frame of drivers that vary in time only (river discharge, climate indices),
+#'   with one row per time step (temporal and spatio-temporal data). The rows are matched
+#'   to the times of the data by a column named `time` when there is one, and are
+#'   otherwise taken in increasing order of the distinct times. Lags are columns: for the
+#'   discharge of the same month and of the two months before, give three columns (say
+#'   `discharge`, `discharge_lag1` and `discharge_lag2`), taken from the series before
+#'   the first time where needed, since no value may be missing. The drivers are added
+#'   to the basis of every group, and are the basis of the variables without dependence,
+#'   so that the correction also removes what they explain from every variable; in
+#'   space-time each driver takes the same value at every site. The bases are still
+#'   selected on the data alone. In the whitening mode the drivers are removed from the
+#'   data before the whitening. Not used by the scale mode.
 #' @return An object of class `depprep_corrected`: a list with `R`, `R_pairwise`
 #'   (before the projection), `adjustment`, `X` (residuals or whitened data; `NULL` in
 #'   scale mode), `R_scale`, `r2_scale`, `p_scale`, `bands` and `scalogram` (scale
 #'   mode), `bases`, `variable_bases` (scope `"variables"`), `kn` (by group),
 #'   `union_kn` (by pair of groups), `warnings`, `mode`, `scope`, `data_basis` and
 #'   `group` (`"global"` for every dependent variable under the global scope, `"union"`
-#'   under the variables scope).
+#'   under the variables scope). With `covariates`, also `covariates` (the drivers as an
+#'   orthonormal basis with one row per observation; `bases` then include them) and
+#'   `partition`, the variation partition of each variable between its position (the
+#'   basis of its group, without the drivers; none for the variables without dependence)
+#'   and the drivers, from [variation_partition()].
 #' @references Borcard, D., Legendre, P., Avois-Jacquet, C. and Tuomisto, H. (2004).
 #'   Dissecting the spatial structure of ecological data at multiple scales. Ecology 85,
 #'   1826-1832.
@@ -115,7 +132,7 @@
 #' @export
 correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases = NULL,
                     mode = NULL, scope = NULL, data_basis = c("own", "union"), period = NULL,
-                    kn_max = 0.3, seed = 1L, menu = NULL, cores = 1L, sample_sites = 1) {
+                    kn_max = 0.3, seed = 1L, menu = NULL, cores = 1L, sample_sites = 1, covariates = NULL) {
   if (inherits(X, "depprep_sim")) {
     d <- .data_parts(X); X <- d$X; coords <- d$coords; time <- d$time; index <- d$index
   }
@@ -149,6 +166,8 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
       stop("`menu` must be a basis_menu() or a list of them named by group.", call. = FALSE)
     }
   }
+  if (!is.null(covariates) && mode == "scale") stop("`covariates` is not used by the scale mode.", call. = FALSE)
+  C <- if (is.null(covariates)) NULL else .covariate_basis(covariates, family, time, index)
   menu_of <- function(g) if (is.null(menu)) NULL else if (inherits(menu, "depprep_menu")) menu else menu[[g]]
   args <- switch(family, spatial = list(coords = coords), temporal = list(time = time),
                  spatiotemporal = list(coords = coords, index = index))
@@ -210,7 +229,14 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     }, pool), groups)
   }
   if (is.null(parts)) parts <- bases[groups]
-  empty <- .as_basis(matrix(0, n, 0), "none", n, 0, character(0))
+  position <- bases                                        # the bases before the drivers (for the partition)
+  if (!is.null(C)) {
+    bases[groups] <- lapply(bases[groups], .with_covariates, C)
+    for (g in groups) if (attr(bases[[g]], "kn") > kn_max) {
+      warn <- c(warn, sprintf("basis of %s with the drivers: k/n = %.2f > %.2f", g, attr(bases[[g]], "kn"), kn_max))
+    }
+  }
+  empty <- if (is.null(C)) .as_basis(matrix(0, n, 0), "none", n, 0, character(0)) else C
   basis_of <- function(g) if (g == "none") empty else bases[[g]]
   kn <- vapply(groups, function(g) attr(bases[[g]], "kn"), 0)
 
@@ -226,9 +252,10 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   transform <- if (mode == "conditional") {
     function(cols, B) .resid_on(X[, cols, drop = FALSE], B)
   } else {
+    Xw <- if (is.null(C)) X else .resid_on(X, C)             # the drivers are removed before the whitening
     W <- lapply(stats::setNames(c(groups, "none"), c(groups, "none")), function(g)
-      .whitener(X[, grp == g, drop = FALSE], g, gtype[[g]], bases[[g]], family, coords, time, index))
-    function(cols, B, g) W[[g]](X[, cols, drop = FALSE])
+      .whitener(Xw[, grp == g, drop = FALSE], g, gtype[[g]], bases[[g]], family, coords, time, index))
+    function(cols, B, g) W[[g]](Xw[, cols, drop = FALSE])
   }
   ug <- c(groups, if (any(grp == "none")) "none")
   R <- diag(ncol(X)); dimnames(R) <- list(colnames(X), colnames(X))
@@ -263,7 +290,7 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
         menu = menu_of(grp0[j]), seed = seed + j), args)), pool), colnames(X)[grp0 != "none"])
     }
     own <- function(j) if (grp0[j] == "none") empty else
-      if (!is.null(variable_bases)) variable_bases[[colnames(X)[j]]] else basis_of(grp[j])   # bases given: use them
+      if (!is.null(variable_bases)) .with_covariates(variable_bases[[colnames(X)[j]]], C) else basis_of(grp[j])   # bases given: use them
     E <- vapply(seq_len(ncol(X)), function(j) .resid_on(X[, j, drop = FALSE], own(j))[, 1], numeric(n))
     E <- matrix(E, n); colnames(E) <- colnames(X); E
   } else if (mode == "conditional") {
@@ -274,10 +301,15 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     m <- min(vapply(pieces, nrow, 0L))
     do.call(cbind, lapply(pieces, utils::tail, m))[, colnames(X), drop = FALSE]
   }
-  structure(list(R = near, R_pairwise = R, adjustment = sqrt(sum((near - R)^2)), X = Xout, R_scale = NULL,
-                 bases = bases, variable_bases = variable_bases, kn = kn, union_kn = union_kn, warnings = warn,
-                 mode = mode, scope = scope, data_basis = data_basis, group = grp),
-            class = "depprep_corrected")
+  out <- list(R = near, R_pairwise = R, adjustment = sqrt(sum((near - R)^2)), X = Xout, R_scale = NULL,
+              bases = bases, variable_bases = variable_bases, kn = kn, union_kn = union_kn, warnings = warn,
+              mode = mode, scope = scope, data_basis = data_basis, group = grp)
+  if (!is.null(C)) {
+    out$covariates <- C
+    out$partition <- variation_partition(X, stats::setNames(lapply(grp, function(g) if (g == "none") NULL else position[[g]]),
+                                                            colnames(X)), C)
+  }
+  structure(out, class = "depprep_corrected")
 }
 
 #' @export
@@ -302,6 +334,35 @@ print.depprep_corrected <- function(x, ...) {
     return(as.list(t))
   }
   stats::setNames(as.list(rep("isotropic", length(unique(grp)))), unique(grp))
+}
+
+# The drivers of correct() as an orthonormal basis with one row per observation: one row
+# per time step, matched by a `time` column or in increasing order of the times, and
+# repeated over the sites in space-time.
+.covariate_basis <- function(covariates, family, time, index) {
+  if (family == "spatial") stop("`covariates` are drivers that vary in time: give `time`, or `coords` and `index`.", call. = FALSE)
+  tt <- if (family == "temporal") time else index$time
+  steps <- sort(unique(tt))
+  if (is.data.frame(covariates) && "time" %in% names(covariates)) {
+    at <- match(steps, covariates$time)
+    if (anyNA(at)) stop("`covariates` has no row for some times of the data.", call. = FALSE)
+    covariates <- covariates[at, setdiff(names(covariates), "time"), drop = FALSE]
+  } else if (NROW(covariates) != length(steps)) {
+    stop(sprintf("`covariates` must have one row per time step (%d), or a `time` column.", length(steps)), call. = FALSE)
+  }
+  D <- .driver_matrix(covariates, length(steps))
+  Q <- .orthonormal(D[match(tt, steps), , drop = FALSE])
+  if (!ncol(Q)) stop("No column of `covariates` varies in time.", call. = FALSE)
+  if (ncol(Q) >= length(steps) - 1) stop("`covariates` has as many columns as time steps.", call. = FALSE)
+  .as_basis(Q, "covariates", length(tt), NA_real_, colnames(Q))
+}
+
+# A basis together with the drivers (none: the basis itself), keeping its type.
+.with_covariates <- function(b, C) {
+  if (is.null(C)) return(b)
+  u <- suppressWarnings(union_basis(b, C, kn_max = 1))
+  attr(u, "type") <- attr(b, "type")
+  u
 }
 
 # Centred residuals of the columns of M on the basis B.

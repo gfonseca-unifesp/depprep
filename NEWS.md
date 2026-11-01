@@ -2,6 +2,11 @@
 
 ## Drivers (stage 9)
 
+* `correct(covariates = )` conditions on drivers that vary in time only (decision D15),
+  one row per time step with the lags as columns: they are added to the basis of every
+  group (and are the basis of the variables without dependence), so the correction
+  also removes what they explain. The output then has the variation partition of each
+  variable (`partition`). Without covariates every output is the same as before.
 * `variation_partition()` splits the variance of each variable into the parts explained
   by its position only, by the drivers only, by both, and the residual, with adjusted
   R-squared (Peres-Neto et al. 2006).

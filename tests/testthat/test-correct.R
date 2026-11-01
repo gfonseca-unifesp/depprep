@@ -278,3 +278,77 @@ test_that("the bases built on several cores are the same as on one", {
   expect_identical(depprep:::.lapply_cores(1:3, function(i) i^2, 2), list(1, 4, 9))
   expect_error(depprep:::.lapply_cores(1:2, function(i) stop("boom ", i), 2), "boom")
 })
+
+test_that("without covariates every output is the same as before the option", {
+  ref <- readRDS(test_path("fixtures", "correct_reference.rds"))      # see helper-correct_reference.R
+  expect_equal(correct_reference_cases(), ref, tolerance = 1e-10)
+  expect_equal(correct_reference_cases(covariates = NULL), ref, tolerance = 1e-10)
+})
+
+seasonal_with_driver <- function(n_times = 480, seed = 1) {
+  # two variables: a shared season (0.4 of the variance), a shared driver (0.3) and their
+  # own noise (0.3), so that their residual correlation is 0 once both are conditioned on
+  set.seed(seed)
+  t <- seq_len(n_times)
+  season <- sqrt(2) * sin(2 * pi * t / 12)
+  driver <- as.numeric(scale(stats::rnorm(n_times)))
+  X <- sqrt(0.4) * season + sqrt(0.3) * driver + sqrt(0.3) * matrix(stats::rnorm(2 * n_times), n_times)
+  X <- cbind(X, stats::rnorm(n_times) + driver)                       # no dependence but the driver
+  colnames(X) <- c("a", "b", "c")
+  gr <- data.frame(variable = colnames(X), group = c("g1", "g1", "none"), group_type = c("seasonal", "seasonal", "none"))
+  list(X = X, time = t, driver = driver, grouping = gr)
+}
+
+test_that("the drivers are conditioned on, and the partition recovers their known share", {
+  d <- seasonal_with_driver()
+  cr0 <- correct(d$X, d$grouping, time = d$time, period = 12)
+  cr <- correct(d$X, d$grouping, time = d$time, period = 12, covariates = cbind(driver = d$driver))
+  expect_null(cr0$partition)
+  expect_false(any(c("covariates", "partition") %in% names(cr0)))
+  expect_gt(cr0$R["a", "b"], 0.35)                                   # the shared driver inflates it
+  expect_lt(abs(cr$R["a", "b"]), 0.15)
+  expect_lt(max(abs(crossprod(unclass(cr$covariates), cr$X))), 1e-8)  # every column, "none" too
+  expect_equal(cr$X[, "c"], depprep:::.resid_on(d$X[, "c", drop = FALSE], cr$covariates)[, 1], ignore_attr = TRUE)
+  expect_identical(attr(cr$bases$global, "terms"), c(attr(cr0$bases$global, "terms"), "driver"))
+  vp <- cr$partition
+  expect_identical(vp$variable, colnames(d$X))
+  truth <- c(position_only = 0.4, shared = 0, drivers_only = 0.3, residual = 0.3)
+  for (v in c("a", "b")) expect_lt(max(abs(unlist(vp[vp$variable == v, names(truth)]) - truth)), 0.07)
+  expect_equal(vp$position_only[3], 0)
+  expect_equal(vp$drivers_only[3], 0.5, tolerance = 0.15)
+})
+
+test_that("in space-time the drivers repeat over the sites and are matched by time", {
+  g <- sim_groups(sim_group("sep", 3, "separable_ar1", range = 0.5, phi = 0.8), sim_group("none", 1, "none"))
+  s <- sim_spatiotemporal(20, 30, g, seed = 8)
+  set.seed(8)
+  driver <- stats::rnorm(30)
+  s$X <- s$X + 0.8 * driver[s$index$time]
+  gr <- data.frame(variable = colnames(s$X), group = c("g1", "g1", "g1", "none"),
+                   group_type = c("separable_ar1", "separable_ar1", "separable_ar1", "none"))
+  cr <- correct(s, gr, covariates = data.frame(enso = driver))
+  C <- unclass(cr$covariates)
+  expect_equal(dim(C), c(600L, 1L))
+  expect_equal(unname(C[s$index$time == 5, 1]), rep(unname(C[which(s$index$time == 5)[1], 1]), 20))
+  expect_identical(cr$mode, "whiten")
+  expect_true(all(cr$partition$drivers_only + cr$partition$shared > 0.2))
+  o <- sample(30)
+  by_time <- correct(s, gr, covariates = data.frame(time = o, enso = driver[o]))
+  expect_equal(by_time$R, cr$R)
+  expect_equal(by_time$X, cr$X)
+  cc <- correct(s, gr, mode = "conditional", covariates = data.frame(enso = driver))
+  expect_lt(max(abs(crossprod(C, cc$X))), 1e-8)
+})
+
+test_that("covariates in the wrong form stop with a clear message", {
+  d <- seasonal_with_driver(60)
+  fit <- function(cv, ...) correct(d$X, d$grouping, time = d$time, period = 12, covariates = cv, ...)
+  expect_error(fit(d$driver[-1]), "one row per time step")
+  expect_error(fit(replace(d$driver, 3, NA)), "missing")
+  expect_error(fit(data.frame(time = 2:61, x = d$driver)), "no row for some times")
+  expect_error(fit(rep(1, 60)), "varies in time")
+  expect_error(fit(d$driver, mode = "scale"), "scale mode")
+  g <- sim_groups(sim_group("a", 2, "matern", range = 0.5))
+  s <- sim_spatial(50, g, seed = 1)
+  expect_error(correct(s, c(a_1 = "g1", a_2 = "g1"), covariates = 1:50), "vary in time")
+})

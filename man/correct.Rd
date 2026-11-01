@@ -19,7 +19,8 @@ correct(
   seed = 1L,
   menu = NULL,
   cores = 1L,
-  sample_sites = 1
+  sample_sites = 1,
+  covariates = NULL
 )
 }
 \arguments{
@@ -70,6 +71,20 @@ Linux and macOS, a socket cluster on Windows.}
 (spatial and spatio-temporal data), passed to \code{\link[=build_group_basis]{build_group_basis()}}; 1 (the
 default) uses all of them. Experimental and off by default: it saves time but the
 bases capture less of the large-scale structure (see \code{\link[=build_group_basis]{build_group_basis()}}).}
+
+\item{covariates}{Optional drivers to condition on (decision D15): a numeric matrix or
+data frame of drivers that vary in time only (river discharge, climate indices),
+with one row per time step (temporal and spatio-temporal data). The rows are matched
+to the times of the data by a column named \code{time} when there is one, and are
+otherwise taken in increasing order of the distinct times. Lags are columns: for the
+discharge of the same month and of the two months before, give three columns (say
+\code{discharge}, \code{discharge_lag1} and \code{discharge_lag2}), taken from the series before
+the first time where needed, since no value may be missing. The drivers are added
+to the basis of every group, and are the basis of the variables without dependence,
+so that the correction also removes what they explain from every variable; in
+space-time each driver takes the same value at every site. The bases are still
+selected on the data alone. In the whitening mode the drivers are removed from the
+data before the whitening. Not used by the scale mode.}
 }
 \value{
 An object of class \code{depprep_corrected}: a list with \code{R}, \code{R_pairwise}
@@ -78,7 +93,11 @@ scale mode), \code{R_scale}, \code{r2_scale}, \code{p_scale}, \code{bands} and \
 mode), \code{bases}, \code{variable_bases} (scope \code{"variables"}), \code{kn} (by group),
 \code{union_kn} (by pair of groups), \code{warnings}, \code{mode}, \code{scope}, \code{data_basis} and
 \code{group} (\code{"global"} for every dependent variable under the global scope, \code{"union"}
-under the variables scope).
+under the variables scope). With \code{covariates}, also \code{covariates} (the drivers as an
+orthonormal basis with one row per observation; \code{bases} then include them) and
+\code{partition}, the variation partition of each variable between its position (the
+basis of its group, without the drivers; none for the variables without dependence)
+and the drivers, from \code{\link[=variation_partition]{variation_partition()}}.
 }
 \description{
 Removes the large-scale structure of each group of variables with the group's own
