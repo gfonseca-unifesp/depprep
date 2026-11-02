@@ -21,7 +21,13 @@ build_group_basis(
 )
 }
 \arguments{
-\item{X_group}{Numeric matrix, one column per variable of the group.}
+\item{X_group}{Numeric matrix, one column per variable of the group. It may hold
+missing values (\code{NA}; decision D26): in the selection a missing value counts as the
+variable's mean, so it adds nothing to the variance a candidate explains (the
+statistic of a candidate is its product with the observed values only), and a
+variable with many gaps weighs less in the sum over the group. The selected terms
+are defined at every row; \code{\link[=correct]{correct()}} then fits them on each variable's observed
+rows.}
 
 \item{coords}{Site coordinates (spatial and spatio-temporal data).}
 

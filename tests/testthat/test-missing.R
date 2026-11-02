@@ -64,3 +64,30 @@ test_that("a spatio-temporal variable with gaps gets a full signature", {
   expect_equal(sig$phi[1:2], ref$phi[1:2], tolerance = 0.2)
   expect_identical(classify_regime(sig), classify_regime(ref))
 })
+
+test_that("the basis of a variable with gaps is the basis with its gaps at its mean", {
+  g <- sim_groups(sim_group("a", 1, "matern", range = 0.4))
+  s <- sim_spatial(200, g, seed = 7)
+  x <- s$X
+  x[c(5, 30:45, 120), 1] <- NA
+  b_na <- build_group_basis(x, coords = s$coords, type = "isotropic", seed = 1)
+  filled <- x
+  filled[is.na(filled)] <- mean(x, na.rm = TRUE)
+  # filling with the mean only rescales the standardised column: the same tests, the same terms
+  b_mean <- build_group_basis(filled, coords = s$coords, type = "isotropic", seed = 1)
+  expect_gt(attr(b_na, "k"), 0)
+  expect_identical(attr(b_na, "terms"), attr(b_mean, "terms"))
+  expect_equal(nrow(b_na), 200)
+})
+
+test_that("a spatio-temporal group with gaps selects nearly the terms of the complete group", {
+  g <- sim_groups(sim_group("tc", 3, "temporal_common", phi = 0.9))
+  s <- sim_spatiotemporal(40, 30, g, seed = 8)
+  X <- s$X
+  set.seed(9)
+  X[sample.int(length(X), round(0.1 * length(X)))] <- NA
+  b <- build_group_basis(X, coords = s$coords, index = s$index, type = "temporal_common", seed = 1)
+  ref <- build_group_basis(s$X, coords = s$coords, index = s$index, type = "temporal_common", seed = 1)
+  expect_gt(attr(b, "k"), 0)
+  expect_gt(length(intersect(attr(b, "terms"), attr(ref, "terms"))) / attr(ref, "k"), 0.7)
+})

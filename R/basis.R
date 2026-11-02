@@ -35,7 +35,13 @@
 #' `kn_max`. A global permutation test of all candidates comes first; if it is not
 #' significant the basis is empty.
 #'
-#' @param X_group Numeric matrix, one column per variable of the group.
+#' @param X_group Numeric matrix, one column per variable of the group. It may hold
+#'   missing values (`NA`; decision D26): in the selection a missing value counts as the
+#'   variable's mean, so it adds nothing to the variance a candidate explains (the
+#'   statistic of a candidate is its product with the observed values only), and a
+#'   variable with many gaps weighs less in the sum over the group. The selected terms
+#'   are defined at every row; [correct()] then fits them on each variable's observed
+#'   rows.
 #' @param coords Site coordinates (spatial and spatio-temporal data).
 #' @param time Times of the rows (temporal data).
 #' @param index Data frame with the `site` (row of `coords`) and `time` of each row
@@ -86,9 +92,9 @@
 build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL, type = NULL, period = NULL,
                               kn_max = 0.25, alpha = 0.05, nperm = 199, seed = 1L, trend = TRUE, menu = NULL,
                               sample_sites = 1) {
-  .check_values(X_group, coords, time, missing = FALSE)
+  .check_values(X_group, coords, time)
   Y <- scale(as.matrix(X_group))
-  Y[!is.finite(Y)] <- 0                                   # constant columns carry no information
+  Y[!is.finite(Y)] <- 0                                   # constant columns carry no information; a missing value counts as the mean
   n <- nrow(Y)
   spatial_types <- c("isotropic", "anisotropic")
   temporal_types <- c("seasonal", "trend", "ar")
