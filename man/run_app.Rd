@@ -36,7 +36,9 @@ equator; the app says how much shorter a degree of longitude is at the largest l
 of the data, and asks to project them when that exceeds 2\% (beyond about 11 degrees of
 latitude).
 
-Limits shown in the app: missing values are not supported yet; large data (over a few
+Missing values (empty cells) are accepted (decision D26): each variable is diagnosed,
+corrected and correlated on its observed rows, and the previews of the techniques on
+observations use the rows where every variable has a value. Large data (over a few
 thousand observations) are slow.
 Needs the shiny package.
 }

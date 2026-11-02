@@ -111,8 +111,10 @@ test_that(".app_data() reads the positions of each family and checks the data", 
   expect_match(depprep:::.app_data(deg, "spatial", x = "x", y = "y")$notes, "Near the equator this is fine")
   deg$y <- deg$y + 50
   expect_match(depprep:::.app_data(deg, "spatial", x = "x", y = "y")$notes, "Project them")
-  bad <- df; bad[3, 4] <- NA
-  expect_error(depprep:::.app_data(bad, "spatial", x = "x", y = "y"), "missing values")
+  gappy <- df; gappy[3, 4] <- NA
+  expect_match(depprep:::.app_data(gappy, "spatial", x = "x", y = "y")$notes, "of the values are missing")
+  bad <- df; bad$x[2] <- NA
+  expect_error(depprep:::.app_data(bad, "spatial", x = "x", y = "y"), "`coords`")
   expect_error(depprep:::.app_data(df, "temporal"), "time column")
   expect_error(depprep:::.app_data(df, "spatial", x = "x", y = "y", variables = "long_1"), "at least two")
   st <- data.frame(site = rep(c("a", "b", "c"), times = 4), t = rep(1:4, each = 3), x = rep(c(0, 1, 2), 4), y = rep(c(0, 0, 1), 4),
@@ -175,4 +177,28 @@ test_that("the app server loads the example and builds the data", {
     expect_equal(settings()$scope, "global")
   })
   expect_s3_class(depprep:::.app_ui(), "shiny.tag.list")
+})
+
+test_that("the previews and the diagnosis plots of the app accept missing values", {
+  df <- depprep:::.app_example()
+  df[c(3, 40:49), 4] <- NA
+  d <- depprep:::.app_data(df, "spatial", x = "x", y = "y")
+  gr <- group_regimes(diagnose_variables(d$X, coords = d$coords, nsim = 0))
+  cr <- correct(d$X, gr, coords = d$coords, seed = 1)
+  for (tq in c("pca", "kmeans")) {
+    p <- depprep:::.technique_preview(tq, d$X, cr$X, cr$R, k = 3)
+    expect_false(any(p$rows %in% c(3, 40:49)))
+  }
+  f <- tempfile(fileext = ".pdf")
+  on.exit(unlink(f))
+  v <- colnames(d$X)[3]
+  for (w in depprep:::.diagnosis_plots("spatial")) {
+    expect_silent(depprep:::.save_figure(f, function() depprep:::.draw_diagnosis(d, v, 1, 1, w), "pdf"))
+  }
+  tm <- data.frame(t = 1:60, a = sin(1:60 / 3) + stats::rnorm(60, sd = 0.1), b = stats::rnorm(60))
+  tm$a[10:14] <- NA
+  dt <- depprep:::.app_data(tm, "temporal", time = "t")
+  for (w in depprep:::.diagnosis_plots("temporal")) {
+    expect_silent(depprep:::.save_figure(f, function() depprep:::.draw_diagnosis(dt, "a", 1, 1, w), "pdf"))
+  }
 })

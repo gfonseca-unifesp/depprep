@@ -1,5 +1,17 @@
 # depprep 0.1.0
 
+## Missing values (stage 9, decision D26)
+
+* Missing values (`NA`) in the data are accepted, without imputation: each variable
+  uses its observed rows. `diagnose_variables()` computes each signature on the
+  observed sites or times (gaps stay in place in a series); `build_group_basis()`
+  selects the terms with a missing value counting as the variable's mean; `correct()`
+  regresses each variable on its basis over its observed rows (in the whitening mode,
+  each time is whitened at its observed sites and the AR filter skips the gaps) and
+  computes `R` pairwise; `variation_partition()` and `verify()` describe each variable
+  on its observed rows; the app accepts empty cells. The scale mode still needs
+  complete data. With complete data every output is the same as before.
+
 ## Drivers (stage 9)
 
 * `correct(covariates = )` conditions on drivers that vary in time only (decision D15),

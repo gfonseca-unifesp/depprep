@@ -20,7 +20,9 @@
 #' of the data, and asks to project them when that exceeds 2% (beyond about 11 degrees of
 #' latitude).
 #'
-#' Limits shown in the app: missing values are not supported yet; large data (over a few
+#' Missing values (empty cells) are accepted (decision D26): each variable is diagnosed,
+#' corrected and correlated on its observed rows, and the previews of the techniques on
+#' observations use the rows where every variable has a value. Large data (over a few
 #' thousand observations) are slow.
 #' Needs the shiny package.
 #'
@@ -39,8 +41,8 @@ run_app <- function(launch.browser = interactive()) {
 # --- Pure helpers (tested without the app) --------------------------------------------
 
 # The data of the app from a data frame and the chosen columns: the numeric variables,
-# the positions of the family, and the checks the app shows (missing values stop;
-# coordinates that look like degrees and large data give notes).
+# the positions of the family, and the checks the app shows (missing positions stop;
+# missing values, coordinates that look like degrees and large data give notes).
 .app_data <- function(df, family, x = NULL, y = NULL, time = NULL, site = NULL, variables = NULL) {
   family <- match.arg(family, c("spatial", "temporal", "spatiotemporal"))
   pos_cols <- c(x, y, time, site)
@@ -81,7 +83,13 @@ run_app <- function(launch.browser = interactive()) {
     out$coords <- xy[first, , drop = FALSE][order(s[first]), , drop = FALSE]
     out$index <- data.frame(site = s, time = as.numeric(df[[time]]))
   }
-  .check_values(X, if (family == "spatial") out$coords else NULL, out$time, missing = FALSE)
+  .check_values(X, if (family == "spatial") out$coords else NULL, out$time)
+  if (anyNA(X)) {
+    notes <- c(notes, sprintf(paste("%.1f%% of the values are missing (%s): each variable uses its observed rows, and the",
+                                    "previews of the techniques on observations use the %d rows where every variable has a value."),
+                              100 * mean(is.na(X)), paste(colnames(X)[colSums(is.na(X)) > 0], collapse = ", "),
+                              sum(stats::complete.cases(X))))
+  }
   if (nrow(X) > 3000) notes <- c(notes, sprintf("%d observations: the diagnosis and the correction can take minutes.", nrow(X)))
   out$notes <- notes
   out
@@ -123,20 +131,30 @@ run_app <- function(launch.browser = interactive()) {
 # 5: the scores of the observations on the first two PCA axes (on the axes of the
 # corrected R for the corrected data) or the MDS configuration, or the classes of
 # k-means, SOM (units grouped into k) or HDBSCAN (0 = noise). With more than `max_n`
-# observations a seeded subsample is shown. `rows` are the rows of X shown.
+# observations a seeded subsample is shown. `rows` are the rows of X shown. With missing
+# values only the rows where every variable has a value, raw and corrected, are shown
+# (the raw correlations of the PCA are then pairwise, as in correct()).
 .technique_preview <- function(technique = c("pca", "mds", "kmeans", "som", "hdbscan"), X, Xc, Rc = NULL, k = 3,
                                seed = 1L, max_n = 2000) {
   technique <- match.arg(technique)
   rows <- utils::tail(seq_len(nrow(X)), nrow(Xc))          # the whitening drops the first times
   X <- as.matrix(X)[rows, , drop = FALSE]
-  n <- nrow(X)
+  Xc <- as.matrix(Xc)
+  whole <- stats::complete.cases(X) & stats::complete.cases(Xc)
+  if (!all(whole)) {
+    if (sum(whole) < max(k + 1, 10)) stop("Too few rows where every variable has a value for this preview.", call. = FALSE)
+    rows <- rows[whole]
+  }
+  n <- sum(whole)
   sub <- if (n > max_n) sort(.with_stream(seed, .streams[["subsample"]], sample(n, max_n))) else seq_len(n)
   one <- function(M, R) {
+    C <- if (anyNA(M)) stats::cor(M, use = "pairwise.complete.obs") else stats::cor(M)
+    M <- M[whole, , drop = FALSE]
     Z <- scale(M); Z[!is.finite(Z)] <- 0
     Z <- Z[sub, , drop = FALSE]
     switch(technique,
       pca = {
-        e <- eigen(if (is.null(R)) stats::cor(M) else R, symmetric = TRUE)
+        e <- eigen(if (is.null(R)) C else R, symmetric = TRUE)
         list(xy = Z %*% e$vectors[, 1:2], share = e$values[1:2] / sum(e$values), loadings = e$vectors[, 1:2, drop = FALSE])
       },
       mds = list(xy = stats::cmdscale(stats::dist(Z), k = 2)),
@@ -147,7 +165,7 @@ run_app <- function(launch.browser = interactive()) {
       },
       hdbscan = list(cl = dbscan::hdbscan(Z, minPts = max(10L, as.integer(ceiling(0.02 * nrow(Z)))))$cluster))
   }
-  out <- .with_stream(seed, .streams[["downstream"]], list(raw = one(X, NULL), corrected = one(as.matrix(Xc), Rc)))
+  out <- .with_stream(seed, .streams[["downstream"]], list(raw = one(X, NULL), corrected = one(Xc, Rc)))
   c(out, list(technique = technique, rows = rows[sub], variables = colnames(X)))
 }
 
@@ -237,12 +255,14 @@ run_app <- function(launch.browser = interactive()) {
   what <- match.arg(what, unname(.diagnosis_plots(d$family)))
   z <- d$X[, variable]
   st <- d$family == "spatiotemporal"
-  site_z <- if (st) as.vector(tapply(z, d$index$site, mean)) else z
+  site_z <- if (st) as.vector(tapply(z, d$index$site, mean, na.rm = TRUE)) else z
+  site_z[is.nan(site_z)] <- NA                               # a site never observed
+  o <- !is.na(z)                                           # missing values are left out of the plots
   lab <- .axis_names(d$coords)
   graphics::par(cex = cex, mar = c(4.2, 4.2, 2.5, 1))
   switch(what,
     variogram = {
-      v <- gstat::variogram(z ~ 1, locations = ~ x + y, data = data.frame(z = z, x = d$coords[, 1], y = d$coords[, 2]))
+      v <- gstat::variogram(z ~ 1, locations = ~ x + y, data = data.frame(z = z, x = d$coords[, 1], y = d$coords[, 2])[o, ])
       graphics::plot(v$dist, v$gamma, pch = 19, cex = pt, xlab = "distance", ylab = "semivariance", main = paste("Variogram of", variable))
     },
     correlogram = {
@@ -261,7 +281,7 @@ run_app <- function(launch.browser = interactive()) {
       pal <- grDevices::hcl.colors(20)
       graphics::plot(d$coords, pch = 19, cex = pt, col = pal[cut(site_z, 20)], asp = 1, xlab = lab[1], ylab = lab[2],
                      main = paste0(variable, if (st) " (site means)"))
-      at <- seq(min(site_z), max(site_z), length.out = 5)
+      at <- seq(min(site_z, na.rm = TRUE), max(site_z, na.rm = TRUE), length.out = 5)
       graphics::legend("topleft", inset = c(1.02, 0), legend = format(signif(at, 3)), pch = 15, pt.cex = 1.6,
                        col = pal[c(1, 5, 10, 15, 20)], bty = "n", xpd = NA, cex = 0.8)
     },
@@ -278,8 +298,8 @@ run_app <- function(launch.browser = interactive()) {
         o <- order(d$time); tm <- d$time[o]; y <- z[o]
         graphics::plot(tm, y, type = "l", col = "grey40", xlab = "time", ylab = variable, main = paste("Series of", variable))
       }
-      lin <- stats::lm(y ~ tm)
-      cub <- stats::lm(y ~ stats::poly(tm, min(3, length(unique(tm)) - 1)))
+      lin <- stats::lm(y ~ tm, na.action = stats::na.exclude)
+      cub <- stats::lm(y ~ stats::poly(tm, min(3, length(unique(tm)) - 1)), na.action = stats::na.exclude)
       graphics::lines(tm, stats::fitted(lin), lty = 2, lwd = 2, col = "#c0392b")
       graphics::lines(tm, stats::fitted(cub), lwd = 2, col = "#2a6fb0")
       r2 <- c(summary(lin)$r.squared, summary(cub)$r.squared)
@@ -288,13 +308,20 @@ run_app <- function(launch.browser = interactive()) {
                        lty = c(2, 1), lwd = 2, col = c("#c0392b", "#2a6fb0"), bty = "n", cex = 0.8)
     },
     acf = if (st) {
-      stats::acf(tapply(z, d$index$time, mean), main = paste("ACF of the mean series of", variable))
+      m <- tapply(z, d$index$time, mean, na.rm = TRUE); m[is.nan(m)] <- NA
+      stats::acf(m, main = paste("ACF of the mean series of", variable), na.action = stats::na.pass)
     } else {
       o <- order(d$time)
       graphics::par(mfrow = c(1, 2))
-      stats::acf(z[o], main = paste("ACF of", variable))
-      sp <- stats::spec.pgram(z[o], taper = 0, detrend = TRUE, plot = FALSE)
-      graphics::plot(1 / sp$freq, sp$spec, type = "h", log = "x", xlab = "period", ylab = "power", main = "Periodogram")
+      stats::acf(z[o], main = paste("ACF of", variable), na.action = stats::na.pass)
+      if (anyNA(z)) {                                      # the FFT periodogram needs a complete series
+        graphics::plot.new()
+        graphics::title("Periodogram")
+        graphics::text(0.5, 0.5, "The series has gaps:\nsee the period and its strength\nin the table of the diagnosis.", cex = 0.85)
+      } else {
+        sp <- stats::spec.pgram(z[o], taper = 0, detrend = TRUE, plot = FALSE)
+        graphics::plot(1 / sp$freq, sp$spec, type = "h", log = "x", xlab = "period", ylab = "power", main = "Periodogram")
+      }
     })
   invisible(NULL)
 }
@@ -551,7 +578,7 @@ run_app <- function(launch.browser = interactive()) {
         shiny::downloadButton("dl_diag6", "Diagnosis before the correction (CSV)"),
         shiny::downloadButton("dl_lisa", "Local Moran's I before and after (CSV, space)"),
         shiny::hr(),
-        shiny::p(class = "help", "Limits: missing values are not supported yet; project coordinates in degrees beyond about 11 degrees of latitude; filters such as SAR/CAR or STAR are not in the menu."))))
+        shiny::p(class = "help", "Limits: with missing values, the previews of the techniques on observations use only the rows where every variable has a value; project coordinates in degrees beyond about 11 degrees of latitude; filters such as SAR/CAR or STAR are not in the menu."))))
 }
 
 # --- Server ---------------------------------------------------------------------------
