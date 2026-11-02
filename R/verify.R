@@ -78,8 +78,17 @@
 #' When it fires, check whether the classes sought could be regions or periods before
 #' using the corrected data for them.
 #'
+#' **Missing values** (`NA` in `X`, decision D26). Each variable is described on its
+#' observed rows: the autocorrelation, the Moran correlograms and the local Moran's I at
+#' its observed sites (in space-time, the site means over the observed times), the
+#' Ljung-Box test with the gaps in place (the permutations move the observed values among
+#' the observed times), the covariances of the projected and residual parts on the rows
+#' where both variables have a value, and the Mantel correlogram on the rows where every
+#' variable has a value.
+#'
 #' @param corrected Output of [correct()] (conditional or whiten mode).
-#' @param X The raw data (matrix or `depprep_sim`), as given to [correct()].
+#' @param X The raw data (matrix or `depprep_sim`), as given to [correct()]; may hold
+#'   missing values (`NA`).
 #' @param coords,time,index As in [correct()].
 #' @param period Known seasonal period, for the Ljung-Box lag in time; `NULL` to take
 #'   it from `corrected` when it records one.
@@ -151,18 +160,30 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
   own <- identical(corrected$data_basis, "own")
   if (corrected$mode == "conditional" || own) E <- E[ord, , drop = FALSE]
   keep <- utils::tail(seq_len(nrow(Xo)), nrow(E))
+  gaps <- anyNA(X) || anyNA(E)
+  # Moran's I at the sites where z has a value (the neighbours among them)
+  moran_at <- function(z, lw) {
+    o <- !is.na(z)
+    if (all(o)) return(.moran(z, lw)[["moran_I"]])
+    .moran(z[o], .knn_weights(as.matrix(coords)[o, , drop = FALSE]))[["moran_I"]]
+  }
+  mean_by_site <- function(z, site) { m <- tapply(z, site, mean, na.rm = TRUE); m[is.nan(m)] <- NA; m }
   autocor <- switch(family,
-    spatial = { lw <- .knn_weights(coords); function(z, rows) .moran(z, lw)[["moran_I"]] },
-    temporal = function(z, rows) stats::acf(z, lag.max = 1, plot = FALSE)$acf[2],
+    spatial = { lw <- .knn_weights(coords); function(z, rows) moran_at(z, lw) },
+    temporal = function(z, rows) stats::acf(z, lag.max = 1, plot = FALSE, na.action = stats::na.pass)$acf[2],
     spatiotemporal = {
       lw <- .knn_weights(coords)
-      function(z, rows) .moran(tapply(z, index$site[rows], mean), lw)[["moran_I"]]
+      function(z, rows) moran_at(if (anyNA(z)) mean_by_site(z, index$site[rows]) else tapply(z, index$site[rows], mean), lw)
     })
   U <- if (corrected$mode == "conditional") .union_of_bases(corrected, nrow(X)) else matrix(0, nrow(X), 0)
   parts <- if (corrected$mode == "conditional") .large_scale_parts(X, corrected, U) else .no_large_parts(X)
+  removed <- function(j) {
+    o <- !is.na(E[, j]) & !is.na(Xo[keep, j])               # the rows with a value before and after
+    1 - stats::var(E[o, j]) / stats::var(Xo[keep, j][o])
+  }
   vars <- data.frame(
     variable = colnames(X), group = grp,
-    removed = vapply(seq_len(ncol(X)), function(j) 1 - stats::var(E[, j]) / stats::var(Xo[keep, j]), 0),
+    removed = vapply(seq_len(ncol(X)), removed, 0),
     autocor_before = vapply(seq_len(ncol(X)), function(j) autocor(Xo[, j], seq_len(nrow(Xo))), 0),
     autocor_after = vapply(seq_len(ncol(X)), function(j) autocor(E[, j], keep), 0),
     large_share = unname(diag(parts$large_share)),
@@ -175,6 +196,7 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
   # (Freedman and Lane) for the Ljung-Box and Mantel tests.
   site_means <- function(M) {
     if (!ncol(M)) return(matrix(0, nrow(as.matrix(coords)), 0))
+    if (anyNA(M)) return(apply(M, 2, mean_by_site, index$site[keep]))
     apply(M, 2, function(z) tapply(z, index$site[keep], mean))
   }
   Z <- switch(family, spatiotemporal = site_means(E), E)
@@ -194,13 +216,13 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
     n_t <- nrow(E)
     lag <- min(ceiling(max(if (is.finite(T_known)) 2 * T_known else 0, 10 * log10(n_t))), floor(n_t / 3))
     vars$lb_lag <- lag
-    vars$lb_p <- if (is.null(own_b)) .ljung_box(Z, lag, Fq, nperm, seed) else
+    vars$lb_p <- if (is.null(own_b) && !anyNA(Z)) .ljung_box(Z, lag, Fq, nperm, seed) else
       vapply(seq_len(ncol(Z)), function(j) .ljung_box(Z[, j, drop = FALSE], lag, Fq_of(j), nperm, seed + j), 0)
     vars$residual_structure <- vars$lb_p <= alpha
     position <- matrix(time[ord][keep])
   } else {
     position <- coords
-    correlograms <- if (is.null(own_b)) .moran_correlogram(Z, position, Fq) else
+    correlograms <- if (is.null(own_b) && !anyNA(Z)) .moran_correlogram(Z, position, Fq) else
       do.call(rbind, lapply(seq_len(ncol(Z)), function(j) .moran_correlogram(Z[, j, drop = FALSE], position, Fq_of(j))))
     by_var <- split(correlograms, factor(correlograms$variable, levels = colnames(X)))
     vars$correlogram_p <- vapply(by_var, function(d) if (all(is.na(d$p))) NA_real_ else
@@ -222,13 +244,15 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
 
   # the same descriptions of the raw data, before the correction, for the user to compare
   # (exploratory; the null removes only the mean)
-  Z0 <- switch(family, spatiotemporal = apply(X, 2, function(z) tapply(z, index$site, mean)), Xo)
+  Z0 <- switch(family, spatiotemporal = apply(X, 2, function(z) if (anyNA(z)) mean_by_site(z, index$site) else tapply(z, index$site, mean)), Xo)
   Fq0 <- .fixed_space(matrix(0, nrow(Z0), 0))
   correlograms_before <- lisa_before <- NULL
   if (family == "temporal") {
-    vars$lb_p_before <- .ljung_box(Z0, lag, Fq0, nperm, seed)
+    vars$lb_p_before <- if (!anyNA(Z0)) .ljung_box(Z0, lag, Fq0, nperm, seed) else
+      vapply(seq_len(ncol(Z0)), function(j) .ljung_box(Z0[, j, drop = FALSE], lag, Fq0, nperm, seed), 0)
   } else {
-    correlograms_before <- .moran_correlogram(Z0, position, Fq0)
+    correlograms_before <- if (!anyNA(Z0)) .moran_correlogram(Z0, position, Fq0) else
+      do.call(rbind, lapply(seq_len(ncol(Z0)), function(j) .moran_correlogram(Z0[, j, drop = FALSE], position, Fq0)))
     by_var0 <- split(correlograms_before, factor(correlograms_before$variable, levels = colnames(X)))
     vars$correlogram_p_before <- vapply(by_var0, function(d) if (all(is.na(d$p))) NA_real_ else
       min(1, min(d$p, na.rm = TRUE) * sum(!is.na(d$p))), 0, USE.NAMES = FALSE)
@@ -238,7 +262,7 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
   }
 
   # what the correction did to the correlations
-  R_raw <- stats::cor(X)
+  R_raw <- if (anyNA(X)) stats::cor(X, use = "pairwise.complete.obs") else stats::cor(X)
   dR <- corrected$R - R_raw
   ut <- upper.tri(dR)
   kind <- outer(grp, grp, function(a, b) ifelse(a == "none" | b == "none", "involving no dependence",
@@ -306,16 +330,18 @@ print.depprep_verification <- function(x, ...) {
   Z <- as.matrix(Z)
   lw <- .knn_weights(coords)
   do.call(rbind, lapply(seq_len(ncol(Z)), function(j) {
-    z <- Z[, j]
+    o <- !is.na(Z[, j])                                    # a variable with gaps: its observed sites
+    z <- Z[o, j]
+    site <- which(o)
     if (stats::sd(z) < 1e-12) {
-      return(data.frame(variable = colnames(Z)[j], site = seq_along(z), local_I = 0, z = 0, p = 1, p_adjusted = 1,
+      return(data.frame(variable = colnames(Z)[j], site = site, local_I = 0, z = 0, p = 1, p_adjusted = 1,
                         cluster = "none", stringsAsFactors = FALSE))
     }
-    lm <- spdep::localmoran(z, lw, alternative = "two.sided")
+    lm <- spdep::localmoran(z, if (all(o)) lw else .knn_weights(as.matrix(coords)[o, , drop = FALSE]), alternative = "two.sided")
     p <- lm[, 5]
     q <- as.character(attr(lm, "quadr")$mean)
     padj <- stats::p.adjust(p, "fdr")
-    data.frame(variable = colnames(Z)[j], site = seq_along(z), local_I = unname(lm[, 1]), z = unname(lm[, 4]), p = unname(p),
+    data.frame(variable = colnames(Z)[j], site = site, local_I = unname(lm[, 1]), z = unname(lm[, 4]), p = unname(p),
                p_adjusted = unname(padj), cluster = ifelse(padj <= alpha, tolower(gsub("-", "_", q)), "none"),
                stringsAsFactors = FALSE)
   }))
@@ -346,6 +372,8 @@ print.depprep_verification <- function(x, ...) {
 # correction: on U, the union of all its bases (the projector of the data matrix), and
 # pair by pair with the projector correct() uses for R (group basis within a group, union
 # of the two bases across groups, none between variables without dependence).
+# With missing values, each variable is projected on its observed rows (as correct()
+# does), and each covariance is taken on the rows where both variables have a value.
 .large_scale_parts <- function(X, corrected, U) {
   Xc <- scale(as.matrix(X), scale = FALSE)
   n <- nrow(Xc)
@@ -353,11 +381,19 @@ print.depprep_verification <- function(x, ...) {
   groups <- setdiff(unique(grp), "none")
   empty <- matrix(0, n, 0)
   basis_of <- function(g) if (g == "none") empty else unclass(corrected$bases[[g]])
-  project <- function(B, M) if (ncol(B)) B %*% crossprod(B, M) else M * 0
+  gaps <- anyNA(Xc)
+  project <- function(B, M) {
+    if (!ncol(B)) return(M * 0)
+    if (!anyNA(M)) return(B %*% crossprod(B, M))
+    M - .resid_on(M, B)                                    # fitted on the observed rows
+  }
+  zero <- function(M) { M[is.na(M)] <- 0; M }
+  cp <- if (gaps) function(A, B = A) crossprod(zero(A), zero(B)) else function(A, B = A) crossprod(A, B)
+  N <- if (gaps) crossprod(!is.na(Xc)) else n               # rows where both have a value
   L <- project(U, Xc)
-  C <- crossprod(Xc) / (n - 1)
-  CL <- crossprod(L) / (n - 1)
-  CE <- crossprod(Xc - L) / (n - 1)
+  C <- cp(Xc) / (N - 1)
+  CL <- cp(L) / (N - 1)
+  CE <- cp(Xc - L) / (N - 1)
   sd_L <- sqrt(diag(CL))
   R_large <- CL / outer(sd_L, sd_L)
   R_large[!is.finite(R_large)] <- NA
@@ -369,8 +405,8 @@ print.depprep_verification <- function(x, ...) {
       bb <- list(basis_of(ug[a]), basis_of(ug[b]))
       if (sum(vapply(bb, ncol, 0L))) unclass(suppressWarnings(do.call(union_basis, c(bb, kn_max = 1)))) else empty
     }
-    S[ia, ib] <- crossprod(Xc[, ia, drop = FALSE], project(B, Xc[, ib, drop = FALSE])) /
-      crossprod(Xc[, ia, drop = FALSE], Xc[, ib, drop = FALSE])
+    S[ia, ib] <- cp(Xc[, ia, drop = FALSE], project(B, Xc[, ib, drop = FALSE])) /
+      cp(Xc[, ia, drop = FALSE], Xc[, ib, drop = FALSE])
     S[ib, ia] <- t(S[ia, ib])
   }
   share <- CL / C
@@ -479,9 +515,17 @@ print.depprep_verification <- function(x, ...) {
 }
 
 # Ljung-Box statistic of every column of Z (rows in time order) up to `lag`.
+# With gaps (one column): the sums over the pairs of observed values, n the number of
+# observed values.
 .ljung_box_q <- function(Z, lag) {
   Z <- scale(as.matrix(Z), scale = FALSE)
   n <- nrow(Z)
+  if (anyNA(Z)) {
+    z <- Z[, 1]; m <- sum(!is.na(z)); z[is.na(z)] <- 0
+    q <- 0
+    for (h in seq_len(lag)) q <- q + (sum(z[-(1:h)] * z[1:(n - h)]) / sum(z^2))^2 / (m - h)
+    return(m * (m + 2) * q)
+  }
   den <- colSums(Z^2)
   q <- 0
   for (h in seq_len(lag)) q <- q + (colSums(Z[-(1:h), , drop = FALSE] * Z[1:(n - h), , drop = FALSE]) / den)^2 / (n - h)
@@ -490,7 +534,20 @@ print.depprep_verification <- function(x, ...) {
 
 # Ljung-Box p-value of every column of Z: from the permutation null of residuals on the
 # fixed space, or from the chi-square distribution when nperm = 0.
+# A column with gaps is tested alone: the statistic over the pairs of observed values, and
+# the null moves the observed values among the observed times (projected off the fixed
+# space restricted to them).
 .ljung_box <- function(Z, lag, Fq, nperm, seed) {
+  if (anyNA(Z)) {
+    z <- as.vector(Z[, 1]); o <- !is.na(z)
+    q <- .ljung_box_q(Z, lag)
+    if (nperm < 1) return(unname(stats::pchisq(q, lag, lower.tail = FALSE)))
+    Fo <- .fixed_space(Fq[o, , drop = FALSE])
+    q0 <- .with_stream(seed, .streams[["permutation"]], vapply(seq_len(nperm), function(b) {
+      zp <- z; zp[o] <- .null_draw(matrix(z[o]), Fo); .ljung_box_q(matrix(zp), lag)
+    }, 0))
+    return(unname((1 + sum(q0 >= q)) / (nperm + 1)))
+  }
   q <- .ljung_box_q(Z, lag)
   if (nperm < 1) return(unname(stats::pchisq(q, lag, lower.tail = FALSE)))
   q0 <- .with_stream(seed, .streams[["permutation"]],
@@ -523,6 +580,10 @@ print.depprep_verification <- function(x, ...) {
 .moran_correlogram <- function(Z, coords, Fq) {
   Z <- as.matrix(Z)
   if (is.null(colnames(Z))) colnames(Z) <- paste0("V", seq_len(ncol(Z)))
+  if (anyNA(Z)) {                                          # one column with gaps: at its observed sites
+    o <- !is.na(Z[, 1])
+    return(.moran_correlogram(Z[o, , drop = FALSE], as.matrix(coords)[o, , drop = FALSE], .fixed_space(Fq[o, , drop = FALSE])))
+  }
   Z <- Z - Fq %*% crossprod(Fq, Z)
   D <- as.matrix(stats::dist(as.matrix(coords)))
   n <- nrow(D); k <- ncol(Fq)
@@ -554,6 +615,12 @@ print.depprep_verification <- function(x, ...) {
 .mantel_correlogram <- function(Z, position, Fq, nperm, seed) {
   if (nperm < 1) return(NULL)
   Z <- as.matrix(Z)
+  if (anyNA(Z)) {                                          # the rows where every variable has a value
+    o <- stats::complete.cases(Z)
+    if (sum(o) < 10) return(NULL)
+    return(.mantel_correlogram(Z[o, , drop = FALSE], as.matrix(position)[o, , drop = FALSE],
+                               .fixed_space(Fq[o, , drop = FALSE]), nperm, seed))
+  }
   Z <- Z - Fq %*% crossprod(Fq, Z)
   dz <- function(M) { M <- scale(M); M[!is.finite(M)] <- 0; stats::dist(M) }
   D_geo <- stats::dist(as.matrix(position))

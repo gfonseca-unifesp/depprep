@@ -20,7 +20,8 @@ verify(
 \arguments{
 \item{corrected}{Output of \code{\link[=correct]{correct()}} (conditional or whiten mode).}
 
-\item{X}{The raw data (matrix or \code{depprep_sim}), as given to \code{\link[=correct]{correct()}}.}
+\item{X}{The raw data (matrix or \code{depprep_sim}), as given to \code{\link[=correct]{correct()}}; may hold
+missing values (\code{NA}).}
 
 \item{coords, time, index}{As in \code{\link[=correct]{correct()}}.}
 
@@ -144,6 +145,14 @@ cannot tell a large-scale field shared by most variables from regional classes: 
 says that much of the association between variables is at the scale of the basis.
 When it fires, check whether the classes sought could be regions or periods before
 using the corrected data for them.
+
+\strong{Missing values} (\code{NA} in \code{X}, decision D26). Each variable is described on its
+observed rows: the autocorrelation, the Moran correlograms and the local Moran's I at
+its observed sites (in space-time, the site means over the observed times), the
+Ljung-Box test with the gaps in place (the permutations move the observed values among
+the observed times), the covariances of the projected and residual parts on the rows
+where both variables have a value, and the Mantel correlogram on the rows where every
+variable has a value.
 }
 \examples{
 \donttest{

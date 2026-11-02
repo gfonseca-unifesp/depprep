@@ -156,3 +156,40 @@ test_that("correct() stops on missing values in the scale mode and on pairs neve
   expect_error(correct(X, grp, coords = s$coords, mode = "scale"), "scale mode needs complete data")
   expect_error(correct(X, grp, coords = s$coords, scope = "groups"), "none_1 and none_2")
 })
+
+test_that("verify() describes every family with missing values on the observed rows", {
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.4), sim_group("none", 1, "none"))
+  s <- sim_spatial(150, g, seed = 17)
+  X <- s$X
+  X[c(4, 60:75), 2] <- NA
+  grp <- stats::setNames(c("g1", "g1", "g1", "none"), colnames(X))
+  cr <- correct(X, grp, coords = s$coords, scope = "groups", seed = 1)
+  v <- verify(cr, X, coords = s$coords, nperm = 19)
+  expect_true(all(is.finite(as.matrix(v$variables[, c("removed", "autocor_before", "autocor_after", "correlogram_p")]))))
+  expect_false(any(v$lisa$site[v$lisa$variable == colnames(X)[2]] %in% c(4, 60:75)))
+  expect_true(is.finite(v$q3$statistic))
+  expect_false(is.null(v$mantel))
+  ref <- verify(correct(s$X, grp, coords = s$coords, scope = "groups", seed = 1), s$X, coords = s$coords, nperm = 19)
+  expect_equal(v$q3$statistic, ref$q3$statistic, tolerance = 0.2)
+
+  gt <- sim_groups(sim_group("ar", 3, "ar1", phi = 0.8))
+  st <- sim_temporal(150, gt, seed = 18)
+  X <- st$X; X[c(10, 80:90), 1] <- NA
+  grt <- group_regimes(diagnose_variables(X, time = st$time, nsim = 0))
+  vt <- verify(correct(X, grt, time = st$time, seed = 1), X, time = st$time, nperm = 19)
+  expect_true(all(is.finite(as.matrix(vt$variables[, c("removed", "autocor_after", "lb_p", "lb_p_before")]))))
+
+  gs <- sim_groups(sim_group("tc", 3, "temporal_common", phi = 0.8), sim_group("none", 1, "none"))
+  ss <- sim_spatiotemporal(40, 25, gs, seed = 19)
+  X <- ss$X
+  set.seed(20)
+  X[sample.int(nrow(X), 100), 1] <- NA
+  X[ss$index$site == 3, 2] <- NA                          # a site never observed in one variable
+  grs <- group_regimes(diagnose_variables(ss$X, coords = ss$coords, index = ss$index, nsim = 0), method = "type")
+  for (m in c("conditional", "whiten")) {
+    vs <- verify(correct(X, grs, coords = ss$coords, index = ss$index, mode = m, seed = 1), X,
+                 coords = ss$coords, index = ss$index, nperm = 19)
+    expect_true(all(is.finite(as.matrix(vs$variables[, c("removed", "autocor_before", "autocor_after", "correlogram_p")]))))
+    expect_false(3 %in% vs$lisa$site[vs$lisa$variable == colnames(X)[2]])
+  }
+})
