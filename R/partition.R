@@ -17,7 +17,9 @@
 #' adjusted R-squared is somewhat optimistic (Blanchet et al. 2008), and so is the
 #' position-only fraction.
 #'
-#' @param X Numeric matrix (observations x variables).
+#' @param X Numeric matrix (observations x variables). It may hold missing values
+#'   (`NA`; decision D26): the fractions of a variable are then computed on its observed
+#'   rows (the tables restricted to those rows, `n` the number of them).
 #' @param position The position basis: one matrix with one row per observation (for
 #'   example a basis from [build_group_basis()]) for every variable, or a list with one
 #'   such matrix per variable (named by the columns of `X`, or in their order). `NULL`
@@ -68,10 +70,20 @@ variation_partition <- function(X, position, drivers) {
   do.call(rbind, rows)
 }
 
-# Adjusted R-squared of the column x on the orthonormal (centred) columns of Q.
+# Adjusted R-squared of the column x on the orthonormal (centred) columns of Q. With
+# missing values, on the observed rows, where Q is no longer orthonormal: a regression
+# with the constant, k the rank of the table there.
 .adj_r2 <- function(x, Q) {
   k <- ncol(Q); n <- nrow(Q)
   if (!k) return(0)
+  if (anyNA(x)) {
+    o <- !is.na(x); x <- as.vector(x)[o]; n <- sum(o)
+    q <- qr(cbind(1, Q[o, , drop = FALSE]), tol = 1e-7)
+    k <- q$rank - 1
+    if (k >= n - 1) stop("A table of the partition has as many columns as observed values.", call. = FALSE)
+    r2 <- 1 - sum(qr.resid(q, x)^2) / sum((x - mean(x))^2)
+    return(1 - (1 - r2) * (n - 1) / (n - k - 1))
+  }
   if (k >= n - 1) stop("A table of the partition has as many columns as observations.", call. = FALSE)
   x <- scale(x, scale = FALSE)
   r2 <- sum(crossprod(Q, x)^2) / sum(x^2)

@@ -7,7 +7,9 @@
 variation_partition(X, position, drivers)
 }
 \arguments{
-\item{X}{Numeric matrix (observations x variables).}
+\item{X}{Numeric matrix (observations x variables). It may hold missing values
+(\code{NA}; decision D26): the fractions of a variable are then computed on its observed
+rows (the tables restricted to those rows, \code{n} the number of them).}
 
 \item{position}{The position basis: one matrix with one row per observation (for
 example a basis from \code{\link[=build_group_basis]{build_group_basis()}}) for every variable, or a list with one

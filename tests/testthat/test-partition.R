@@ -43,3 +43,21 @@ test_that("one basis per variable, or none, is accepted", {
   expect_error(variation_partition(d$x, d$P, d$D[-1, ]), "one row per observation")
   expect_error(variation_partition(d$x, d$P, replace(d$D, 1, NA)), "missing")
 })
+
+test_that("a variable with gaps is partitioned on its observed rows", {
+  set.seed(11)
+  t <- 1:120
+  position <- cbind(sin(2 * pi * t / 12), cos(2 * pi * t / 12), t / 120)
+  driver <- cbind(index = stats::rnorm(120))
+  x <- 2 * position[, 1] + driver[, 1] + stats::rnorm(120)
+  gone <- c(3, 20:31, 77)
+  y <- x
+  y[gone] <- NA
+  obs <- -gone
+  with_gaps <- variation_partition(cbind(x = y, full = x), position, driver)
+  alone <- variation_partition(cbind(x = x[obs]), position[obs, ], driver[obs, , drop = FALSE])
+  cols <- c("position_only", "shared", "drivers_only", "residual")
+  expect_equal(unlist(with_gaps[1, cols]), unlist(alone[1, cols]))
+  expect_equal(unlist(with_gaps[2, cols]), unlist(variation_partition(cbind(full = x), position, driver)[1, cols]))
+  expect_equal(sum(with_gaps[1, cols]), 1)
+})
