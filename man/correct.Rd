@@ -24,7 +24,8 @@ correct(
 )
 }
 \arguments{
-\item{X}{Numeric matrix (observations x variables), or a \code{depprep_sim} object.}
+\item{X}{Numeric matrix (observations x variables), or a \code{depprep_sim} object; may hold
+missing values (\code{NA}, see above).}
 
 \item{grouping}{Output of \code{\link[=group_regimes]{group_regimes()}}, or a named character vector giving the
 group of each variable (\code{"none"} for variables without dependence).}
@@ -159,6 +160,18 @@ groups, which erred about half as much there, because the shared process persist
 time and the residual does not. In space-time the result is then the correlation of
 the innovations, which equals the residual correlation when the residual association
 does not itself persist in time.
+
+\strong{Missing values} (\code{NA} in \code{X}; decision D26, no imputation). Each variable uses its
+observed rows. The bases are selected with the missing values counting as the
+variable's mean (\code{\link[=build_group_basis]{build_group_basis()}}); each variable is then regressed on its basis
+(and the constant) over its observed rows, so that two variables of a group keep the
+same basis but each is projected on the rows where it was observed (when their gaps
+differ, their projections differ a little: the rule "same basis, same projection" then
+holds only approximately). In the whitening mode, each time (in space and space-time)
+is whitened at its observed sites, with the covariance of those sites, and an AR filter
+gives a missing value where the value or one of its lags is missing. The correlations of
+\code{R} are computed on the rows where both variables have a value (pairwise), and the
+corrected \code{X} keeps the missing values in place. The scale mode needs complete data.
 }
 \examples{
 \donttest{

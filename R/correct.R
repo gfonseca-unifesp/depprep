@@ -55,7 +55,20 @@
 #' the innovations, which equals the residual correlation when the residual association
 #' does not itself persist in time.
 #'
-#' @param X Numeric matrix (observations x variables), or a `depprep_sim` object.
+#' **Missing values** (`NA` in `X`; decision D26, no imputation). Each variable uses its
+#' observed rows. The bases are selected with the missing values counting as the
+#' variable's mean ([build_group_basis()]); each variable is then regressed on its basis
+#' (and the constant) over its observed rows, so that two variables of a group keep the
+#' same basis but each is projected on the rows where it was observed (when their gaps
+#' differ, their projections differ a little: the rule "same basis, same projection" then
+#' holds only approximately). In the whitening mode, each time (in space and space-time)
+#' is whitened at its observed sites, with the covariance of those sites, and an AR filter
+#' gives a missing value where the value or one of its lags is missing. The correlations of
+#' `R` are computed on the rows where both variables have a value (pairwise), and the
+#' corrected `X` keeps the missing values in place. The scale mode needs complete data.
+#'
+#' @param X Numeric matrix (observations x variables), or a `depprep_sim` object; may hold
+#'   missing values (`NA`, see above).
 #' @param grouping Output of [group_regimes()], or a named character vector giving the
 #'   group of each variable (`"none"` for variables without dependence).
 #' @param coords,time,index Coordinates, times or spatio-temporal index, as in
@@ -137,7 +150,8 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     d <- .data_parts(X); X <- d$X; coords <- d$coords; time <- d$time; index <- d$index
   }
   X <- as.matrix(X)
-  .check_values(X, coords, time, missing = FALSE)
+  .check_values(X, coords, time)
+  gaps <- anyNA(X)
   if (is.null(colnames(X))) colnames(X) <- paste0("V", seq_len(ncol(X)))
   family <- if (!is.null(coords) && !is.null(index)) "spatiotemporal" else if (!is.null(coords)) "spatial" else
     if (!is.null(time)) "temporal" else stop("Give `coords`, `time` or `coords` and `index`.", call. = FALSE)
@@ -167,6 +181,7 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     }
   }
   if (!is.null(covariates) && mode == "scale") stop("`covariates` is not used by the scale mode.", call. = FALSE)
+  if (gaps && mode == "scale") stop("The scale mode needs complete data: `X` has missing values.", call. = FALSE)
   C <- if (is.null(covariates)) NULL else .covariate_basis(covariates, family, time, index)
   menu_of <- function(g) if (is.null(menu)) NULL else if (inherits(menu, "depprep_menu")) menu else menu[[g]]
   args <- switch(family, spatial = list(coords = coords), temporal = list(time = time),
@@ -275,10 +290,15 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
       m <- min(nrow(Ea), nrow(Eb))                       # AR filters drop the first observations
       Ea <- utils::tail(Ea, m); Eb <- utils::tail(Eb, m)
     }
-    R[ia, ib] <- stats::cor(Ea, Eb)
+    R[ia, ib] <- if (gaps) stats::cor(Ea, Eb, use = "pairwise.complete.obs") else stats::cor(Ea, Eb)
     R[ib, ia] <- t(R[ia, ib])
   }
   diag(R) <- 1
+  if (anyNA(R)) {
+    bad <- which(is.na(R) & upper.tri(R), arr.ind = TRUE)
+    stop(sprintf("Too few rows where both variables have a value to estimate their correlation: %s.",
+                 paste(colnames(X)[bad[, 1]], colnames(X)[bad[, 2]], sep = " and ", collapse = "; ")), call. = FALSE)
+  }
   near <- as.matrix(Matrix::nearPD(R, corr = TRUE, keepDiag = TRUE)$mat)
   dimnames(near) <- dimnames(R)
   Xout <- if (data_basis == "own") {
@@ -365,12 +385,30 @@ print.depprep_corrected <- function(x, ...) {
   u
 }
 
-# Centred residuals of the columns of M on the basis B.
+# Centred residuals of the columns of M on the basis B. A column with missing values is
+# regressed on B and the constant over its observed rows (the columns with the same gaps
+# together); its missing values stay missing.
 .resid_on <- function(M, B) {
-  M <- scale(as.matrix(M), scale = FALSE)
+  M <- as.matrix(M)
   B <- unclass(B)
-  if (!ncol(B)) return(M)
-  M - B %*% crossprod(B, M)
+  if (!anyNA(M)) {
+    M <- scale(M, scale = FALSE)
+    if (!ncol(B)) return(M)
+    return(M - B %*% crossprod(B, M))
+  }
+  out <- M
+  for (s in .gap_sets(M)) {
+    out[s$rows, s$cols] <- stats::lm.fit(cbind(1, B[s$rows, , drop = FALSE]), M[s$rows, s$cols, drop = FALSE])$residuals
+  }
+  out
+}
+
+# The columns of M grouped by their missing values: for each set, the columns and the rows
+# they have observed.
+.gap_sets <- function(M) {
+  obs <- !is.na(M)
+  key <- apply(obs, 2, function(o) paste(which(!o), collapse = " "))
+  lapply(unique(key), function(k) { cols <- which(key == k); list(cols = cols, rows = obs[, cols[1]]) })
 }
 
 # A function that whitens the columns of a group. Spatial: pooled variogram model of
@@ -384,21 +422,45 @@ print.depprep_corrected <- function(x, ...) {
     return(function(M) { M <- as.matrix(M); if (!is.null(ord0)) M <- M[ord0, , drop = FALSE]; scale(M, scale = FALSE) })
   }
   Z <- scale(Xg)
+  gaps <- anyNA(Z)
+  # spatial whitening: the pooled variogram model of the group as the covariance S of the
+  # sites (each variable fitted at its observed sites), and W the inverse of its Cholesky
+  # factor. A column with missing values is whitened at its observed sites, with the
+  # covariance of those sites (one factor per set of sites, kept for the other columns).
+  inv_chol <- function(S) solve(t(chol(S + diag(1e-8 * mean(diag(S)), nrow(S)))))
   spatial_W <- function(cc, zz) {
     zz <- as.matrix(zz)
-    fits <- lapply(seq_len(ncol(zz)), function(j) .fit_variogram(cc, zz[, j]))
+    fits <- lapply(seq_len(ncol(zz)), function(j) {
+      o <- !is.na(zz[, j])
+      .fit_variogram(if (all(o)) cc else as.matrix(cc)[o, , drop = FALSE], zz[o, j])
+    })
     ok <- vapply(fits, function(f) !is.null(f$fit), TRUE)
-    if (!any(ok)) return(diag(nrow(zz)))
+    if (!any(ok)) return(list(W = diag(nrow(zz)), S = NULL))
     fit <- fits[[which(ok)[which.min(abs(vapply(fits[ok], `[[`, 0, "range") -
                                            stats::median(vapply(fits[ok], `[[`, 0, "range"))))]]]$fit
     d <- as.matrix(stats::dist(as.matrix(cc)))
     S <- gstat::variogramLine(fit, dist_vector = d, covariance = TRUE)
-    solve(t(chol(S + diag(1e-8 * mean(diag(S)), nrow(S)))))
+    list(W = inv_chol(S), S = S, cache = new.env())
   }
+  spatial_whiten <- function(sw, M) {
+    if (!anyNA(M)) return(sw$W %*% M)
+    if (is.null(sw$S)) return(M)
+    for (s in .gap_sets(M)) {
+      if (!any(s$rows)) next
+      k <- paste("gaps", paste(which(!s$rows), collapse = " "))
+      if (is.null(sw$cache[[k]])) sw$cache[[k]] <- inv_chol(sw$S[s$rows, s$rows, drop = FALSE])
+      M[s$rows, s$cols] <- sw$cache[[k]] %*% M[s$rows, s$cols, drop = FALSE]
+    }
+    M
+  }
+  # AR coefficients pooled over the columns; with gaps the AR fit skips them (and the
+  # orders whose AIC cannot be computed are not chosen)
   ar_coef <- function(series) {
-    orders <- vapply(seq_len(ncol(series)), function(j) stats::ar(series[, j], aic = TRUE, order.max = 5)$order, 0)
+    na <- if (anyNA(series)) stats::na.pass else stats::na.fail
+    fit <- function(x, ...) suppressWarnings(stats::ar(x, na.action = na, ...))
+    orders <- vapply(seq_len(ncol(series)), function(j) fit(series[, j], aic = TRUE, order.max = 5)$order, 0)
     p <- max(1, round(stats::median(orders)))
-    coefs <- vapply(seq_len(ncol(series)), function(j) stats::ar(series[, j], aic = FALSE, order.max = p)$ar, numeric(p))
+    coefs <- vapply(seq_len(ncol(series)), function(j) fit(series[, j], aic = FALSE, order.max = p)$ar, numeric(p))
     matrix(coefs, nrow = p) |> rowMeans()
   }
   ar_filter <- function(M, phi) {
@@ -409,8 +471,8 @@ print.depprep_corrected <- function(x, ...) {
     out
   }
   if (family == "spatial") {
-    W <- spatial_W(coords, Z)
-    return(function(M) W %*% scale(as.matrix(M), scale = FALSE))
+    sw <- spatial_W(coords, Z)
+    return(function(M) spatial_whiten(sw, scale(as.matrix(M), scale = FALSE)))
   }
   if (family == "temporal") {
     ord <- order(time)
@@ -422,14 +484,16 @@ print.depprep_corrected <- function(x, ...) {
   # space-time: rows ordered by index; whiten sites at each time, then filter each site
   n_s <- nrow(as.matrix(coords)); tt <- match(index$time, sort(unique(index$time))); n_t <- max(tt)
   to_cube <- function(v) { m <- matrix(0, n_s, n_t); m[cbind(index$site, tt)] <- v; m }
-  site_means <- do.call(cbind, lapply(seq_len(ncol(Z)), function(j) rowMeans(to_cube(Z[, j]))))
-  W <- spatial_W(coords, site_means)
-  time_means <- do.call(cbind, lapply(seq_len(ncol(Z)), function(j) colMeans(to_cube(Z[, j]))))
+  site_means <- do.call(cbind, lapply(seq_len(ncol(Z)), function(j) rowMeans(to_cube(Z[, j]), na.rm = gaps)))
+  site_means[is.nan(site_means)] <- NA                    # a site never observed in a variable
+  sw <- spatial_W(coords, site_means)
+  time_means <- do.call(cbind, lapply(seq_len(ncol(Z)), function(j) colMeans(to_cube(Z[, j]), na.rm = gaps)))
+  time_means[is.nan(time_means)] <- NA
   phi <- ar_coef(scale(time_means, scale = FALSE))
   function(M) {
     M <- scale(as.matrix(M), scale = FALSE)
     do.call(cbind, lapply(seq_len(ncol(M)), function(j) {
-      cube <- W %*% to_cube(M[, j])                       # spatial whitening of every time
+      cube <- spatial_whiten(sw, to_cube(M[, j]))         # spatial whitening of every time
       as.vector(t(ar_filter(t(cube), phi)))               # AR filtering of every site
     }))
   }

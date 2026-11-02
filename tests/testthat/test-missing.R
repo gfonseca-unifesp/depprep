@@ -91,3 +91,68 @@ test_that("a spatio-temporal group with gaps selects nearly the terms of the com
   expect_gt(attr(b, "k"), 0)
   expect_gt(length(intersect(attr(b, "terms"), attr(ref, "terms"))) / attr(ref, "k"), 0.7)
 })
+
+test_that("correct() projects each variable on its basis over its observed rows", {
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.4), sim_group("none", 2, "none"))
+  s <- sim_spatial(200, g, R_true = make_R_true(g, "blocks", within = 0.5, between = 0), seed = 10)
+  X <- s$X
+  set.seed(11)
+  gone <- sample.int(200, 20)
+  X[gone, 1] <- NA
+  X[1:15, 2] <- NA
+  grp <- stats::setNames(c("g1", "g1", "g1", "none", "none"), colnames(X))
+  cr <- correct(X, grp, coords = s$coords, scope = "groups", seed = 1)
+  b <- unclass(cr$bases$g1)
+  o <- !is.na(X[, 1])
+  expect_equal(unname(cr$X[o, 1]), unname(stats::lm.fit(cbind(1, unclass(cr$variable_bases[[1]])[o, ]), X[o, 1])$residuals))
+  expect_true(all(is.na(cr$X[!o, 1])))
+  # R pairwise: both residuals on the group basis, on the rows where both have a value
+  e1 <- stats::lm.fit(cbind(1, b[o, ]), X[o, 1])$residuals
+  o2 <- !is.na(X[, 2])
+  e2 <- stats::lm.fit(cbind(1, b[o2, ]), X[o2, 2])$residuals
+  both <- o & o2
+  expect_equal(cr$R_pairwise[1, 2], stats::cor(e1[both[o]], e2[both[o2]]))
+  # small gaps change R little
+  ref <- correct(s$X, grp, coords = s$coords, scope = "groups", seed = 1)
+  expect_lt(max(abs(cr$R - ref$R)), 0.1)
+})
+
+test_that("the whitening mode accepts missing values in every family", {
+  g <- sim_groups(sim_group("a", 3, "matern", range = 0.4), sim_group("none", 1, "none"))
+  s <- sim_spatial(150, g, seed = 12)
+  X <- s$X; X[c(2, 30:40), 1] <- NA
+  w <- correct(X, stats::setNames(c("g1", "g1", "g1", "none"), colnames(X)), coords = s$coords, mode = "whiten", seed = 1)
+  expect_true(all(is.finite(w$R)))
+  expect_true(all(is.na(w$X[c(2, 30:40), 1])))
+
+  gt <- sim_groups(sim_group("ar", 3, "ar1", phi = 0.8))
+  st <- sim_temporal(150, gt, seed = 13)
+  X <- st$X; X[50:55, 2] <- NA
+  wt <- correct(X, group_regimes(diagnose_variables(X, time = st$time, nsim = 0)), time = st$time, mode = "whiten", seed = 1)
+  expect_true(all(is.finite(wt$R)))
+  expect_gt(sum(is.na(wt$X[, 2])), 5)                     # the gap and the lags that need it
+
+  gs <- sim_groups(sim_group("tc", 3, "temporal_common", phi = 0.8), sim_group("none", 1, "none"))
+  ss <- sim_spatiotemporal(40, 25, gs, seed = 14)
+  X <- ss$X
+  set.seed(15)
+  X[sample.int(nrow(X), 100), 1] <- NA
+  X[ss$index$time == 4, 2] <- NA
+  gr <- group_regimes(diagnose_variables(ss$X, coords = ss$coords, index = ss$index, nsim = 0), method = "type")
+  ws <- correct(X, gr, coords = ss$coords, index = ss$index, seed = 1)
+  expect_identical(ws$mode, "whiten")
+  expect_true(all(is.finite(ws$R)))
+  ref <- correct(ss$X, gr, coords = ss$coords, index = ss$index, seed = 1)
+  expect_lt(max(abs(ws$R - ref$R)), 0.15)
+})
+
+test_that("correct() stops on missing values in the scale mode and on pairs never observed together", {
+  g <- sim_groups(sim_group("a", 2, "matern", range = 0.4), sim_group("none", 2, "none"))
+  s <- sim_spatial(100, g, seed = 16)
+  X <- s$X
+  X[1:50, 3] <- NA
+  X[51:100, 4] <- NA
+  grp <- stats::setNames(c("g1", "g1", "none", "none"), colnames(X))
+  expect_error(correct(X, grp, coords = s$coords, mode = "scale"), "scale mode needs complete data")
+  expect_error(correct(X, grp, coords = s$coords, scope = "groups"), "none_1 and none_2")
+})
