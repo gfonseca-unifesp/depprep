@@ -81,7 +81,7 @@ run_app <- function(launch.browser = interactive()) {
     out$coords <- xy[first, , drop = FALSE][order(s[first]), , drop = FALSE]
     out$index <- data.frame(site = s, time = as.numeric(df[[time]]))
   }
-  .stop_if_missing(X, if (family == "spatial") out$coords else NULL, out$time)
+  .check_values(X, if (family == "spatial") out$coords else NULL, out$time, missing = FALSE)
   if (nrow(X) > 3000) notes <- c(notes, sprintf("%d observations: the diagnosis and the correction can take minutes.", nrow(X)))
   out$notes <- notes
   out

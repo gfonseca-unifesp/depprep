@@ -86,7 +86,7 @@
 build_group_basis <- function(X_group, coords = NULL, time = NULL, index = NULL, type = NULL, period = NULL,
                               kn_max = 0.25, alpha = 0.05, nperm = 199, seed = 1L, trend = TRUE, menu = NULL,
                               sample_sites = 1) {
-  .stop_if_missing(X_group, coords, time)
+  .check_values(X_group, coords, time, missing = FALSE)
   Y <- scale(as.matrix(X_group))
   Y[!is.finite(Y)] <- 0                                   # constant columns carry no information
   n <- nrow(Y)

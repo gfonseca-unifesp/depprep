@@ -20,7 +20,8 @@ diagnose_variables(
 )
 }
 \arguments{
-\item{X}{Numeric matrix (observations x variables) or a \code{depprep_sim} object.}
+\item{X}{Numeric matrix (observations x variables) or a \code{depprep_sim} object; may hold
+missing values (\code{NA}).}
 
 \item{coords}{Two-column matrix of site coordinates (one row per site).}
 
@@ -91,6 +92,14 @@ sites, \code{shift_indicator} and \code{shift_direction} (a pattern that moves);
 \code{range_se}, \code{range_lo}, \code{range_hi} (percentile 90\% interval), \code{phi_se}, \code{phi_lo},
 \code{phi_hi} (basic 90\% interval, which corrects the bias of the AR estimate).
 }
+
+Missing values (\code{NA}) in \code{X} are allowed (decision D26): each variable is diagnosed on
+its observed rows. In space, the statistics are computed at the sites where the variable
+was observed (the nearest neighbours among them); in time, the series keeps its time
+steps, with gaps (the trend, the cycle and the periodogram are fitted on the observed
+times, the autocorrelation and the AR fit skip the missing ones); in space-time, the
+time slices and the sites summarised are those with at least half of their values
+observed, and the slices use the observed sites.
 }
 \examples{
 g <- sim_groups(sim_group("long", 2, "exponential", range = 0.5),

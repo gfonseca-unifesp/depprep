@@ -148,26 +148,34 @@
 #    (the cycle enters only when significant).
 # 3. Persistence: `acf1`, `phi` and `ar_order` on the residuals of trend and cycle.
 #    `ljung_p` stays on the raw series: it detects dependence of any kind.
+# Missing values (NA) stay in place as gaps: the trend, the cycle and the periodogram are
+# fitted on the observed times, and the autocorrelation and the AR fit skip the gaps.
 .temporal_stats <- function(x, max_order = 10, period = NULL, alpha = 0.05) {
   n <- length(x)
-  x <- x - mean(x)
+  obs <- !is.na(x)
+  na <- if (all(obs)) stats::na.fail else stats::na.pass
+  x <- x - mean(x, na.rm = TRUE)
   t <- seq_len(n)
   lb_p <- stats::Box.test(x, lag = min(10, floor(n / 5)), type = "Ljung-Box")$p.value
-  tc <- t - mean(t)
-  xd <- x - tc * sum(tc * x) / sum(tc^2)                          # linear trend removed
-  pg <- .ls_periodogram(xd, t, period = period)
+  tc <- t - mean(t[obs])
+  xd <- x - tc * sum(tc[obs] * x[obs]) / sum(tc[obs]^2)          # linear trend removed
+  pg <- .ls_periodogram(xd[obs], t[obs], period = period, max_period = n / 3, n_span = n)
   harm <- if (is.finite(pg$period) && (!is.null(period) || pg$p < alpha)) {
     h <- seq_len(max(1, min(floor(pg$period / 2), 6)))
     m <- do.call(cbind, lapply(h, function(i) cbind(sin(2 * pi * i * t / pg$period), cos(2 * pi * i * t / pg$period))))
-    scale(m, scale = FALSE)
+    sweep(m, 2, colMeans(m[obs, , drop = FALSE]), check.margin = FALSE)
   } else matrix(0, n, 0)
-  rss <- function(M) if (ncol(M)) sum(stats::lm.fit(M, x)$residuals^2) else sum(x^2)
+  xo <- x[obs]
+  rss <- function(M) if (ncol(M)) sum(stats::lm.fit(M[obs, , drop = FALSE], xo)$residuals^2) else sum(xo^2)
   rss_h <- rss(harm)
   full <- cbind(tc, harm)
-  e <- stats::lm.fit(full, x)$residuals
-  trend_r2 <- if (rss_h > 0) max(0, (rss_h - sum(e^2)) / rss_h) else 0
-  acf1 <- stats::acf(e, 1, plot = FALSE)$acf[2]
-  ar_order <- tryCatch(stats::ar(e, aic = TRUE, order.max = max_order, method = "yule-walker")$order,
+  e <- rep(NA_real_, n)
+  e[obs] <- stats::lm.fit(full[obs, , drop = FALSE], xo)$residuals
+  trend_r2 <- if (rss_h > 0) max(0, (rss_h - sum(e[obs]^2)) / rss_h) else 0
+  acf1 <- stats::acf(e, 1, plot = FALSE, na.action = na)$acf[2]
+  # with gaps the autocovariances need not be positive definite at high orders, and ar()
+  # warns of NaN in their AIC; those orders are simply not chosen
+  ar_order <- tryCatch(suppressWarnings(stats::ar(e, aic = TRUE, order.max = max_order, method = "yule-walker", na.action = na)$order),
                        error = function(err) NA_integer_)
   phi <- tryCatch(unname(stats::arima(e, order = c(1, 0, 0), include.mean = FALSE)$coef[1]),
                   error = function(err) acf1)
@@ -182,13 +190,14 @@
 # low-frequency ordinates) is not read as a cycle: under the null every ordinate is
 # about s(f) * chi-squared(2), and the peak divided by the mean of the K ordinates
 # around it follows about F(2, 2K). The p-value accounts for the frequencies searched
-# (twice the Fourier frequencies of the band, for the oversampled grid).
+# (twice the Fourier frequencies of the band, for the oversampled grid). `n_span` is the
+# number of time steps the series spans (larger than its length when it has gaps).
 .ls_periodogram <- function(x, t = seq_along(x), period = NULL, min_period = 2, max_period = length(x) / 3,
-                            oversample = 10, window = 8) {
-  n <- length(x)
+                            oversample = 10, window = 8, n_span = length(x)) {
+  n <- n_span
   ss <- sum(x^2)
   na <- list(period = NA_real_, strength = NA_real_, p = NA_real_)
-  if (n < 8 || ss <= 0) return(na)
+  if (length(x) < 8 || ss <= 0) return(na)
   f <- if (is.null(period)) seq(1 / max_period, 1 / min_period, by = 1 / (oversample * n)) else 1 / period
   ang <- 2 * pi * outer(t, f)
   S <- sin(ang); C <- cos(ang)
@@ -221,6 +230,8 @@
 
 # Statistics of one spatio-temporal variable `z` (rows ordered as in
 # sim_spatiotemporal(): sites vary fastest within each time).
+# Missing values (NA) are allowed: the slices and the sites are taken among those with at
+# least half of their values observed, each slice at its observed sites.
 # - spatial: Moran and variogram on `n_slices` time slices. Moran's p-value is the
 #   smallest one times the number of slices (Bonferroni), because a seasonal amplitude
 #   map is invisible in slices where the cycle crosses zero; the range is the median
@@ -242,21 +253,26 @@
   zm[cbind(index$site, index$time)] <- z
   if (is.null(lw)) lw <- .knn_weights(coords, k)
   med <- function(x) stats::median(x, na.rm = TRUE)
-  slices <- unique(round(seq(1, nt, length.out = n_slices)))
+  gaps <- anyNA(zm)
+  even <- function(v, m) unique(v[round(seq(1, length(v), length.out = min(length(v), m)))])
+  half <- function(share, all) { ok <- which(share >= 0.5); if (length(ok)) ok else seq_len(all) }
+  slices <- even(half(colMeans(!is.na(zm)), nt), n_slices)
   sp <- t(vapply(slices, function(s) {
-    m <- .moran(zm[, s], lw, nsim)
-    f <- .fit_variogram(coords, zm[, s])
+    o <- !is.na(zm[, s])
+    m <- .moran(zm[o, s], if (all(o)) lw else .knn_weights(coords[o, , drop = FALSE], k), nsim)
+    f <- .fit_variogram(coords[o, , drop = FALSE], zm[o, s])
     c(m, range = f$range, nugget_ratio = f$nugget_ratio)
   }, numeric(4)))
   structured <- sp[, "moran_p"] < 0.05
   use <- if (any(structured)) structured else rep(TRUE, nrow(sp))
-  sites <- unique(round(seq(1, n, length.out = min(n, n_sites))))
+  sites <- even(half(rowMeans(!is.na(zm)), n), n_sites)
   tm <- t(vapply(sites, function(i) .temporal_stats(zm[i, ], period = period), numeric(8)))
   nb <- spdep::knearneigh(coords, k = k)$nn
   pairs <- data.frame(i = rep(sites, each = k), j = as.vector(t(nb[sites, , drop = FALSE])))
   lags <- seq_len(max(1, min(max_lag, floor(nt / 4))))
-  lagcor <- function(x, y, L) stats::cor(x[(L + 1):nt], y[1:(nt - L)])  # x(t + L) vs y(t)
-  r_same <- abs(mapply(function(i, j) stats::cor(zm[i, ], zm[j, ]), pairs$i, pairs$j))
+  cor_use <- if (gaps) "pairwise.complete.obs" else "everything"
+  lagcor <- function(x, y, L) stats::cor(x[(L + 1):nt], y[1:(nt - L)], use = cor_use)  # x(t + L) vs y(t)
+  r_same <- abs(mapply(function(i, j) stats::cor(zm[i, ], zm[j, ], use = cor_use), pairs$i, pairs$j))
   r_lag <- abs(matrix(unlist(mapply(function(i, j) vapply(lags, function(L) lagcor(zm[i, ], zm[j, ], L), 0),
                                     pairs$i, pairs$j, SIMPLIFY = FALSE)), ncol = length(lags), byrow = TRUE))
   gain <- apply(r_lag, 1, max, na.rm = TRUE) - r_same

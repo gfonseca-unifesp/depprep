@@ -149,14 +149,24 @@ group_regimes <- function(signature, data = NULL, method = c("mclust", "hclust",
   data
 }
 
-# Stop on missing or infinite values: the diagnosis, the bases and the correction need
-# complete data (missing data are planned for a later version).
-.stop_if_missing <- function(X, coords = NULL, time = NULL) {
-  bad <- c(X = any(!is.finite(as.matrix(X))), coords = !is.null(coords) && any(!is.finite(as.matrix(coords))),
+# Check the values before a diagnosis, a basis or a correction. The coordinates and
+# times must be complete and finite, and so must X unless `missing` is TRUE: then X may
+# hold missing values (NA), but no infinite ones, and every column needs at least
+# `min_obs` observed values (decision D26: each variable uses its observed rows).
+.check_values <- function(X, coords = NULL, time = NULL, missing = TRUE, min_obs = 3) {
+  X <- as.matrix(X)
+  bad <- c(X = if (missing) any(is.infinite(X)) else any(!is.finite(X)),
+           coords = !is.null(coords) && any(!is.finite(as.matrix(coords))),
            time = !is.null(time) && any(!is.finite(time)))
   if (any(bad)) {
-    stop(sprintf("Missing or infinite values in %s: missing values are not supported yet; remove or fill them first.",
-                 paste0("`", names(bad)[bad], "`", collapse = ", ")), call. = FALSE)
+    what <- if (missing) "Missing or infinite values in %s; only `X` may have missing values (NA)." else
+      "Missing or infinite values in %s: missing values are not supported here; remove or fill them first."
+    stop(sprintf(what, paste0("`", names(bad)[bad], "`", collapse = ", ")), call. = FALSE)
+  }
+  few <- colSums(!is.na(X)) < min_obs
+  if (any(few)) {
+    nm <- if (is.null(colnames(X))) paste0("V", which(few)) else colnames(X)[few]
+    stop(sprintf("Fewer than %d observed values in %s.", min_obs, paste(nm, collapse = ", ")), call. = FALSE)
   }
   invisible(TRUE)
 }

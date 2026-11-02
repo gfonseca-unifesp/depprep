@@ -34,7 +34,16 @@
 #'   `range_se`, `range_lo`, `range_hi` (percentile 90% interval), `phi_se`, `phi_lo`,
 #'   `phi_hi` (basic 90% interval, which corrects the bias of the AR estimate).
 #'
-#' @param X Numeric matrix (observations x variables) or a `depprep_sim` object.
+#' Missing values (`NA`) in `X` are allowed (decision D26): each variable is diagnosed on
+#' its observed rows. In space, the statistics are computed at the sites where the variable
+#' was observed (the nearest neighbours among them); in time, the series keeps its time
+#' steps, with gaps (the trend, the cycle and the periodogram are fitted on the observed
+#' times, the autocorrelation and the AR fit skip the missing ones); in space-time, the
+#' time slices and the sites summarised are those with at least half of their values
+#' observed, and the slices use the observed sites.
+#'
+#' @param X Numeric matrix (observations x variables) or a `depprep_sim` object; may hold
+#'   missing values (`NA`).
 #' @param coords Two-column matrix of site coordinates (one row per site).
 #' @param time Time of each row (temporal family); rows are sorted by it.
 #' @param index Data frame with `site` and `time` of each row (spatio-temporal family).
@@ -73,7 +82,7 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
   }
   X <- as.matrix(X)
   if (!is.numeric(X)) stop("`X` must be numeric.", call. = FALSE)
-  .stop_if_missing(X, coords, time)
+  .check_values(X, coords, time)
   if (is.null(colnames(X))) colnames(X) <- paste0("V", seq_len(ncol(X)))
   family <- if (!is.null(coords) && !is.null(index)) "spatiotemporal" else
     if (!is.null(coords)) "spatial" else if (!is.null(time)) "temporal" else
@@ -92,23 +101,28 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
 
   rows <- lapply(seq_len(ncol(X)), function(j) {
     z <- X[, j]
-    if (normal_scores == "all" || (normal_scores == "counts" && .is_count(z))) z <- .normal_scores(z)
+    obs <- !is.na(z)
+    if (normal_scores == "all" || (normal_scores == "counts" && .is_count(z[obs]))) z[obs] <- .normal_scores(z[obs])
     out <- .empty_signature()
     if (family == "spatial") {
-      m <- .with_stream(perm_seed + j, .streams[["permutation"]], .moran(z, lw, nsim))
-      cg <- .with_stream(perm_seed + j, .streams[["permutation"]], .correlogram_test(coords, z, nsim = nsim))
-      tr <- .spatial_trend(coords, z)
+      # a variable with missing values is diagnosed at the sites where it was observed
+      cj <- if (all(obs)) coords else as.matrix(coords)[obs, , drop = FALSE]
+      lwj <- if (all(obs)) lw else .knn_weights(cj, k)
+      z <- z[obs]
+      m <- .with_stream(perm_seed + j, .streams[["permutation"]], .moran(z, lwj, nsim))
+      cg <- .with_stream(perm_seed + j, .streams[["permutation"]], .correlogram_test(cj, z, nsim = nsim))
+      tr <- .spatial_trend(cj, z)
       zv <- if (tr$r2 > detrend_r2) tr$resid else z
-      f <- .fit_variogram(coords, zv)
+      f <- .fit_variogram(cj, zv)
       out[c("moran_I", "moran_p")] <- as.list(m)
       out$correlogram_p <- cg$p
       out$dependence_p <- min(1, 2 * min(m[["moran_p"]], cg$p, na.rm = TRUE))
       out$trend_r2 <- tr$r2
       out[c("vario_model", "nugget", "sill", "range", "nugget_ratio")] <- f[c("vario_model", "nugget", "sill", "range", "nugget_ratio")]
-      out[c("aniso_ratio", "aniso_direction")] <- as.list(.anisotropy(coords, zv, f))
+      out[c("aniso_ratio", "aniso_direction")] <- as.list(.anisotropy(cj, zv, f))
       if (B > 0 && !is.null(f$fit)) {
         out[c("range_se", "range_lo", "range_hi")] <- as.list(.with_stream(seed + j, .streams[["bootstrap"]],
-                                                                      .boot_range(coords, f$fit, B)))
+                                                                      .boot_range(cj, f$fit, B)))
       }
     } else if (family == "temporal") {
       ts <- .temporal_stats(z, period = period)
