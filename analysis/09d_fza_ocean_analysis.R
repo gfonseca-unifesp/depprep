@@ -47,6 +47,11 @@
 # Timing: DEPPREP_OCEAN_SITES = n runs on the n cells nearest the centre of the basin, and
 # writes to results/fza/ocean_subset_*.
 #
+# Resuming: each correction is saved, with its verification and the conditional fit of
+# its Q3 statistic, in results/fza/ocean_correction_<run>.rds; a run that finds that file
+# reads it instead of correcting again (same seed, same result). Delete the files to run
+# again from the start.
+#
 # Requires results/fza/ocean_cube.csv, ocean_cells.csv, drivers.csv (analysis/09a) and the
 # cached files of data/raw/fza/drivers and data/raw/fza/etopo1_search_box.csv.
 # Outputs (not tracked), in results/fza/: ocean_session.csv, ocean_groups.csv,
@@ -233,6 +238,22 @@ results <- list(); q3_fits <- list()
 for (i in seq_len(nrow(runs))) {
   r <- runs[i, ]; key <- as.character(r$min_fraction)
   X <- data_of[[key]]; gr <- groupings[[key]]
+  saved_file <- out_file(paste0("correction_", r$run, ".rds"))
+  if (r$r_mode != "conditional" && file.exists(saved_file)) {     # resume an interrupted run
+    sv <- readRDS(saved_file)
+    if (!is.null(sv$verification) && is.null(sv$q3_fit)) {        # saved before the Q3 fit was kept:
+      fit <- correct(X, gr, coords = coords, index = index, mode = "conditional", scope = "groups",   # rebuilt
+                     data_basis = "union", seed = seed, covariates = if (r$drivers) covariates else NULL)
+      stopifnot(isTRUE(all.equal(fit$kn, sv$correction$kn)))     # with the same group bases
+      sv$q3_fit <- slim(fit); rm(fit)
+      sv$q3_fit$q3 <- sv$verification$q3
+      saveRDS(sv, saved_file)
+    }
+    if (!is.null(sv$q3_fit)) q3_fits[[r$run]] <- sv$q3_fit
+    results[[r$run]] <- structure(sv$correction, verification = sv$verification)
+    cat(sprintf("%s: resumed from %s\n", r$run, saved_file))
+    next
+  }
   t0 <- Sys.time()
   cr <- if (r$r_mode == "conditional") q3_fits$main else
     correct(X, gr, coords = coords, index = index, seed = seed, cores = params$cores,
@@ -256,8 +277,8 @@ for (i in seq_len(nrow(runs))) {
   if (r$r_mode != "conditional") cr <- slim(cr)
   attr(cr, "time") <- time_correct
   results[[r$run]] <- structure(cr, verification = vf)
-  saveRDS(list(correction = cr, verification = if (!is.null(vf)) vf[setdiff(names(vf), c("R_large", "cov_large", "cov_residual"))]),
-          out_file(paste0("correction_", r$run, ".rds")))
+  saveRDS(list(correction = cr, verification = if (!is.null(vf)) vf[setdiff(names(vf), c("R_large", "cov_large", "cov_residual"))],
+               q3_fit = q3_fits[[r$run]]), saved_file)
   cat(sprintf("%s: correct() %.0f s%s\n", r$run, time_correct, if (is.null(vf)) "" else sprintf(", verify() %.0f s", vf$time)))
 }
 
