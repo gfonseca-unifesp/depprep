@@ -91,6 +91,14 @@ remotes::install_github("gfonseca-unifesp/depprep")   # once
 depprep::run_app()
 ```
 
+**Or without installing the package**, from the code on GitHub. This needs `shiny`,
+`pkgload` and the packages listed under `Imports` in `DESCRIPTION`, and downloads the
+code each time:
+
+```r
+shiny::runGitHub("depprep", "gfonseca-unifesp", ref = "main")
+```
+
 **Or from the command line** (a terminal, with R on the PATH):
 
 ```bash

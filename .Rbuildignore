@@ -12,3 +12,4 @@
 ^_dependencies\.R$
 ^\.Rprofile$
 ^LICENSE\.md$
+^app\.R$
