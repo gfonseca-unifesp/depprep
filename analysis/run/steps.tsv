@@ -1,0 +1,38 @@
+step	script	arguments	needs	access	expected_time	note
+01a	01a_fza_study_area.R	-	-	network: ANP WFS, NOAA ERDDAP	minutes	study area and ETOPO1 box; downloads to data/raw/fza/ only when absent
+01b	01b_fza_data_feasibility.R	-	01a	network: NOAA ERDDAP	minutes	feasibility of the anonymous ERDDAP products
+01c	01c_fza_nasa_feasibility.R	-	01a	network: Earthdata login in ~/_netrc	under 1 h	feasibility of the NASA products (OPeNDAP subsets)
+02	02_simulation_examples.R	-	-	-	minutes	figures of the generators
+02b	02b_generator_recovery.R	-	-	-	not recorded	parameter recovery, 50 replicates per scenario
+03	03_diagnostics.R	-	-	-	not recorded	diagnosis of the stage 3 scenarios
+03f	03_diagnostics_figures.R	-	03	-	minutes	figures of stage 3
+04	04_grouping.R	-	03	-	not recorded	grouping and bases (resumable)
+04f	04_grouping_figures.R	-	03 04	-	minutes	figures of stage 4
+05a	05a_h2_mechanism.R	-	-	-	30 min	H2 mechanism; writes d11_threshold.csv
+05b	05b_correction.R	-	03 05a	-	5 h	correction grid of stage 5
+05c	05c_whitening_st.R	-	-	-	10 min	whitening in space-time
+05f	05_correction_figures.R	-	05a 05b	-	minutes	figures of stage 5
+06	06_pilot.R	-	-	-	2.5 h	pilot with the output methods
+06f	06_pilot_figures.R	-	06	-	minutes	figures of stage 6
+06b	06b_pilot_absorption.R	-	-	-	5 min	absorption in the pilot
+06c	06c_q3_warning.R	-	-	-	5 min	calibration of the first Q3 threshold
+06d	06d_whitening_filters.R	-	-	-	5 min	whitening filters
+06h	06f_hdbscan_pca.R	-	-	-	not recorded	HDBSCAN and the PCA metric (D18)
+06g	06g_protocol_tests.R	-	05b 06	-	not recorded	tests of the pilot that fixed the protocol thresholds
+07	07_full_grid.R	-	-	-	9 h	stage 7 grid of protocol-v1 (resumable; 16 processes)
+07b	07b_h2a.R	-	05a	-	not recorded	H2a on the stage 7 seeds
+07a	07_analysis.R	-	07 07b	-	minutes	tests of protocol-v1
+07c	07c_amendment.R	-	07	-	not recorded	amendment protocol-v1.1
+07d1	07d_q3_recalibration.R	calibrate	07	-	minutes	amendment protocol-v1.2, thresholds
+07d2	07d_q3_recalibration.R	validate	07d1	-	not recorded	amendment protocol-v1.2, validation on new seeds
+07e	07e_q3_cause.R	-	07 07d2	-	not recorded	cause of the Q3 statistic
+08a	08a_q3_reference_pilot.R	-	06 07	-	not recorded	reference of independence for Q3 (D23)
+08b	08b_menu_check.R	-	-	-	not recorded	check of the menu of structures
+08c	08c_q3_size_check.R	-	07d1	-	not recorded	Q3 thresholds at the size of the real data (D23)
+08d	08d_fza_example_tables.R	-	01a 01b	-	minutes	example tables of the package (inst/extdata, tracked)
+08e	08e_sample_sites_check.R	-	-	-	not recorded	sampling of sites (D25)
+08f	08f_correct_time.R	-	-	-	not recorded	time of the correction (D25)
+09a	09a_fza_ocean_cube.R	-	01a	network: Earthdata login, NOAA ERDDAP, ANA, NOAA PSL	hours (downloads), minutes (cached)	ocean cube and drivers; resumes from the files present
+09b	09b_fza_gap_census.R	-	01a 01b 09a	-	minutes	census of the gaps (D26)
+09c	09c_missing_check.R	-	-	-	1-2 h	descriptive check of the correction with missing values (D26)
+09d	09d_fza_ocean_analysis.R	-	09a	-	2-3 h	ocean case, protocol-v1.3 section 16
