@@ -7,7 +7,7 @@
 > simulation study (protocol-v1, with two labelled amendments) and the package with its
 > menu of structures, report and app. The real-data application (stage 9, analysis plan
 > registered as protocol-v1.3) is in progress. Missing values are accepted, without
-> imputation: each variable uses the rows where it was observed (section 3).
+> imputation: each variable uses the rows where it was observed (section 4).
 
 ---
 
@@ -60,7 +60,24 @@ The planned workflow:
                                                                      k-means, SOM
 ```
 
-## 3. The app: the same workflow without code
+## 3. What is in this repository
+
+This repository holds **code only**: the R package, its tests and the script of each
+project stage. Figures and tables are *not* versioned; every script regenerates them
+from recorded seeds into `results/` on your machine.
+
+| Path | Content |
+| --- | --- |
+| `R/` | Package functions: simulation generators, diagnosis, grouping, bases and their menu, correction, verification, report and app |
+| `tests/testthat/` | Tests with known truth for every function |
+| `man/` | Function documentation (generated with roxygen2) |
+| `inst/extdata/` | Example tables of the Foz do Amazonas case study (section 4) |
+| `analysis/` | One script per project stage, numbered in the order they are run |
+| `results/` | Created by the scripts; not tracked by git |
+| `data/raw/` | Downloaded raw data; not tracked by git, never modified |
+| `renv.lock` | Exact versions of every R package used |
+
+## 4. The app: the workflow without code
 
 `run_app()` opens a point-and-click interface (Shiny) in the browser. It runs the same
 functions as the code in sections 9 to 12 and, at the end, gives you the R code that
@@ -231,7 +248,7 @@ Notes and limits shown in the app: the share of missing values, when there are a
 projected beyond about 11 degrees of latitude; and data with more than a few thousand
 observations are slow (the correction of a 628-site x 93-month grid takes hours).
 
-## 4. Known limits
+## 5. Known limits
 
 ### Why purely spatial regimes are hard to tell apart
 
@@ -289,7 +306,7 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
 ### Not supported yet
 
 - **Missing positions and drivers.** Missing values in the variables are accepted
-  (section 3, "Missing values"), but the coordinates, the times and the drivers must be
+  (section 4, "Missing values"), but the coordinates, the times and the drivers must be
   complete. Nothing is imputed, by design: filling gaps would add a dependence that
   belongs to the interpolation. The scale mode of `correct()` still needs complete
   data.
@@ -297,9 +314,9 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
   moving patterns) are not implemented.
 - **Coordinates in degrees** are used as they are, with a degree of longitude taken as a
   degree of latitude: fine near the equator, but beyond about 11 degrees of latitude
-  they should be projected first (section 3).
+  they should be projected first (section 4).
 
-## 5. Reproducibility
+## 6. Reproducibility
 
 - **Seeds.** Every simulation uses an explicit seed, stored in its output. The generators
   use the L'Ecuyer-CMRG generator with one independent stream per component (coordinates,
@@ -322,23 +339,6 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
   `analysis/00_raw_manifest.R`) gives the size, SHA-256, date, source, product and
   version of every downloaded file. `Rscript analysis/00_raw_manifest.R check` compares
   your copy with it.
-
-## 6. What is in this repository
-
-This repository holds **code only**: the R package, its tests and the script of each
-project stage. Figures and tables are *not* versioned; every script regenerates them
-from recorded seeds into `results/` on your machine.
-
-| Path | Content |
-| --- | --- |
-| `R/` | Package functions: simulation generators, diagnosis, grouping, bases and their menu, correction, verification, report and app |
-| `tests/testthat/` | Tests with known truth for every function |
-| `man/` | Function documentation (generated with roxygen2) |
-| `inst/extdata/` | Example tables of the Foz do Amazonas case study (section 3) |
-| `analysis/` | One script per project stage, numbered in the order they are run |
-| `results/` | Created by the scripts; not tracked by git |
-| `data/raw/` | Downloaded raw data; not tracked by git, never modified |
-| `renv.lock` | Exact versions of every R package used |
 
 ## 7. Project stages and their scripts
 
@@ -622,7 +622,7 @@ autocorrelated, so the reference rises with them and hides the signal. The thres
 
 When the warning fires, the correlations are not wrong: much of the association lived at
 the scale of the basis. If the classes you seek are regions or periods, analyse the raw
-data, or use clustering constrained by contiguity (section 4).
+data, or use clustering constrained by contiguity (section 5).
 
 `correct()` has three modes: `"conditional"` (residuals on the group bases),
 `"whiten"` (the observations are whitened with each group's estimated covariance) and
