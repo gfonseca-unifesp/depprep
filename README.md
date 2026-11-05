@@ -2,11 +2,12 @@
 
 **Dependence-aware preprocessing for multivariate exploratory analysis.**
 
-> **Status:** stages 0 to 7 are complete: simulation generators, the diagnosis of each
-> variable, grouping and shared bases, the correction, a pilot and the full
-> pre-registered simulation study (protocol-v1, with two labelled amendments). Stage 8
-> (package, menu of structures, report and app) is in progress. The real-data application
-> (stage 9) has not been done yet, and missing values are not supported.
+> **Status:** stages 0 to 8 are complete: simulation generators, the diagnosis of each
+> variable, grouping and shared bases, the correction, a pilot, the full pre-registered
+> simulation study (protocol-v1, with two labelled amendments) and the package with its
+> menu of structures, report and app. The real-data application (stage 9, analysis plan
+> registered as protocol-v1.3) is in progress. Missing values are accepted, without
+> imputation: each variable uses the rows where it was observed (section 10).
 
 ---
 
@@ -88,8 +89,8 @@ from recorded seeds into `results/` on your machine.
 | 5 | Correct, and measure the mechanism (H2a, H2b) | `R/correct.R`, `R/verify.R`, `analysis/05*` | done |
 | 6 | Pilot with PCA, MDS, k-means and SOM | `R/downstream.R`, `R/comparators.R`, `analysis/06*` | done |
 | 7 | Full pre-registered simulations | `analysis/07*` | done |
-| 8 | Package: menu of structures, report, app | `R/menu.R`, `R/report.R`, `R/app.R`, `analysis/08*` | in progress |
-| 9 | Real-data application | — | planned |
+| 8 | Package: menu of structures, report, app | `R/menu.R`, `R/report.R`, `R/app.R`, `analysis/08*` | done |
+| 9 | Real-data application: missing values, drivers, the Foz do Amazonas ocean | `R/partition.R`, `analysis/09*` | in progress |
 
 ### Stage 1 — real-data case study (Foz do Amazonas)
 
@@ -469,8 +470,11 @@ identifier, the site's coordinates (repeated on each of its rows) and the time.
 
 Rules:
 
-- **At least two numeric variables**, and **no missing values** in the variables, the
-  coordinates or the time (fill or drop them before; gaps are not supported yet).
+- **At least two numeric variables**, each with at least three observed values.
+- **Missing values are allowed in the variables** (empty cells, or `NA` in code), not in
+  the positions: the coordinates, the time and the site must be complete. Nothing is
+  imputed; each variable uses the rows where it was observed (see "Missing values"
+  below). Infinite values stop with an error.
 - **Time is a number**: a month counter (1, 2, 3, ...) or a decimal year (2015.25), not a
   date text such as "2015-04". Equal steps are expected.
 - **Coordinates as longitude and latitude in degrees.** They treat a degree of
@@ -480,13 +484,44 @@ Rules:
   first (for example to UTM, in km) and use them in place of lon and lat. The app leaves
   columns named like coordinates (`lon`, `lat`, `x`, `y`, ...) out of the variables it
   proposes.
-- **Space-time needs a complete grid**: every site has a row at every time, once.
+- **Space-time needs a complete grid**: every site has a row at every time, once. A
+  value that was not observed stays as an empty cell in its row; the row itself is kept.
 - Text columns (names, dates as text, labels) are ignored as variables; you can keep them
   in the file.
 
 The same layouts work in code: `diagnose_variables()` takes the matrix of variables with
 `coords` (spatial), `time` (temporal), or `coords` of the sites plus `index` (a data
 frame with the `site` and `time` of each row, space-time).
+
+### Missing values
+
+Satellite fields have gaps (clouds, sun glint, the edge of a swath), and filling them
+would add a dependence that belongs to the interpolation. So nothing is imputed: each
+variable uses the rows where it was observed (decision D26).
+
+| Step | What happens with the missing values of a variable |
+| --- | --- |
+| Diagnosis (`diagnose_variables()`) | In space, the statistics use the sites where the variable was observed (the nearest neighbours among them). In time, the series keeps its time steps with the gaps in place: the trend, the cycle and the periodogram are fitted on the observed times, and the autocorrelation and the AR fit skip the missing ones. In space-time, the time slices and the sites summarised are those with at least half of their values observed |
+| Basis (`build_group_basis()`) | The terms of a group are selected with each missing value counting as the variable's mean, so it adds nothing to what a candidate explains, and a variable with many gaps weighs less in the group. The selected terms are defined at every row |
+| Correction (`correct()`) | Each variable is regressed on its group's basis (and the constant) over its own observed rows. In the whitening mode, each time is whitened at its observed sites, and the AR filter gives a missing value where the value or one of its lags is missing. The corrected data keep the missing values in place; the correlations of `R` are computed on the rows where both variables have a value |
+| Verification (`verify()`) | Each variable is described on its observed rows: the autocorrelation, the Moran correlograms and the local Moran's I at its observed sites (in space-time, the site means over the observed times), and the Ljung-Box test with the gaps in place. The covariances behind the Q3 warning use the rows where both variables have a value; the Mantel correlogram uses the rows where every variable has a value |
+| Variation partition (`variation_partition()`) | Each variable on its observed rows |
+| App (`run_app()`) | Empty cells are accepted. Step 1 notes the share of missing values and the variables that have them. The previews of the techniques (PCA, k-means) use only the rows where every variable has a value, raw and corrected, and the periodogram plot is left out for a series with gaps (its period is in the table of the diagnosis) |
+
+What to keep in mind:
+
+- **The shared basis holds only approximately.** The variables of a group share the same
+  basis, but each is projected on its own observed rows. When their gaps differ, their
+  projections differ a little, and the rule "same basis, same projection" is then only
+  approximate. With complete data every output is the same as before.
+- **Errors you may see.** A variable with fewer than three observed values; a pair of
+  variables with too few rows observed together to estimate their correlation; missing
+  values in the positions; and the scale mode (`mode = "scale"`), which still needs
+  complete data. The drivers of `correct(covariates = )` cannot have missing values
+  either: take the lags from the series before the first time.
+- **What the gaps cost** was measured on simulated data with 10% to 30% of the values
+  missing, at random and in patches like clouds (in space-time, a region during one
+  season): `analysis/09c_missing_check.R`.
 
 ### Example with real data: the Foz do Amazonas ocean
 
@@ -542,10 +577,10 @@ crt <- correct(Xt, group_regimes(diagnose_variables(Xt, time = series$time)), ti
 | 5. Verification | Check what was removed and what was kept | The autocorrelation of each variable before and after, the change in the correlations, the warning of signal at the scale of the basis, and a preview of the technique (PCA or k-means) before and after |
 | 6. Export | Download the results | The corrected data (CSV), the corrected correlation matrix (CSV), the HTML report of `report_correction()` and the R code |
 
-Limits shown in the app: missing values are not supported yet, coordinates in degrees
-should be projected beyond about 11 degrees of latitude, and data with more than a few
-thousand observations are slow (the correction of a 628-site x 93-month grid takes
-hours).
+Notes and limits shown in the app: the share of missing values, when there are any
+(empty cells are accepted; missing positions are not); coordinates in degrees should be
+projected beyond about 11 degrees of latitude; and data with more than a few thousand
+observations are slow (the correction of a 628-site x 93-month grid takes hours).
 
 ## 11. Known limits
 
@@ -604,7 +639,11 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
 
 ### Not supported yet
 
-- **Missing values.** The diagnosis, the bases and the correction stop on missing values.
+- **Missing positions and drivers.** Missing values in the variables are accepted
+  (section 10, "Missing values"), but the coordinates, the times and the drivers must be
+  complete. Nothing is imputed, by design: filling gaps would add a dependence that
+  belongs to the interpolation. The scale mode of `correct()` still needs complete
+  data.
 - **Filters other than the autoregressive ones** (SAR/CAR whitening in space, STAR for
   moving patterns) are not implemented.
 - **Coordinates in degrees** are used as they are, with a degree of longitude taken as a
