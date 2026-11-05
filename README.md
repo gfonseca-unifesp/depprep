@@ -7,7 +7,7 @@
 > simulation study (protocol-v1, with two labelled amendments) and the package with its
 > menu of structures, report and app. The real-data application (stage 9, analysis plan
 > registered as protocol-v1.3) is in progress. Missing values are accepted, without
-> imputation: each variable uses the rows where it was observed (section 10).
+> imputation: each variable uses the rows where it was observed (section 3).
 
 ---
 
@@ -60,362 +60,11 @@ The planned workflow:
                                                                      k-means, SOM
 ```
 
-## 3. What is in this repository
-
-This repository holds **code only**: the R package, its tests and the script of each
-project stage. Figures and tables are *not* versioned; every script regenerates them
-from recorded seeds into `results/` on your machine.
-
-| Path | Content |
-| --- | --- |
-| `R/` | Package functions: simulation generators, diagnosis, grouping, bases and their menu, correction, verification, report and app |
-| `tests/testthat/` | Tests with known truth for every function |
-| `man/` | Function documentation (generated with roxygen2) |
-| `inst/extdata/` | Example tables of the Foz do Amazonas case study (section 10) |
-| `analysis/` | One script per project stage, numbered in the order they are run |
-| `results/` | Created by the scripts; not tracked by git |
-| `data/raw/` | Downloaded raw data; not tracked by git, never modified |
-| `renv.lock` | Exact versions of every R package used |
-
-## 4. Project stages
-
-| Stage | Question | Code | Status |
-| --- | --- | --- | --- |
-| 0 | Reproducible environment | package skeleton, `renv.lock` | done |
-| 1 | Is there a gap? Which real data? | `analysis/01a_*`, `01b_*`, `01c_*` | done |
-| 2 | Can we simulate data with known truth? | `R/sim_*.R`, `analysis/02_*`, `02b_*` | done |
-| 3 | Diagnose each variable's dependence | `R/diagnose*.R`, `R/classify.R`, `analysis/03_*` | done |
-| 4 | Group regimes and build shared bases | `R/group.R`, `R/basis.R`, `analysis/04_*` | done |
-| 5 | Correct, and measure the mechanism (H2a, H2b) | `R/correct.R`, `R/verify.R`, `analysis/05*` | done |
-| 6 | Pilot with PCA, MDS, k-means and SOM | `R/downstream.R`, `R/comparators.R`, `analysis/06*` | done |
-| 7 | Full pre-registered simulations | `analysis/07*` | done |
-| 8 | Package: menu of structures, report, app | `R/menu.R`, `R/report.R`, `R/app.R`, `analysis/08*` | done |
-| 9 | Real-data application: missing values, drivers, the Foz do Amazonas ocean | `R/partition.R`, `analysis/09*` | in progress |
-
-### Stage 1 — real-data case study (Foz do Amazonas)
-
-The application uses **Level-3 satellite time series** (gridded, not gap-filled) of the
-Foz do Amazonas basin, Brazilian Equatorial Margin, in two case studies sharing one
-rectangle: the **ocean** (the marine part of the basin, official ANP limit) and the
-**land** (within 200 km of that coast). L3 is required because gap-filled (L4) products
-add spatial autocorrelation that belongs to the interpolation, not to the process.
-
-| Script | What it does | Needs |
-| --- | --- | --- |
-| `analysis/01a_fza_study_area.R` | Builds the study area from the ANP basin limits and ETOPO1 topography | internet |
-| `analysis/01b_fza_data_feasibility.R` | Catalogue of candidate L3 products; monthly cloud-free coverage of the products served anonymously by NOAA ERDDAP | internet |
-| `analysis/01c_fza_nasa_feasibility.R` | Same for NASA products (SMAP salinity and soil moisture, MODIS land and ocean colour, GPM IMERG), subset with OPeNDAP | a free [NASA Earthdata](https://urs.earthdata.nasa.gov) login stored in `~/_netrc` (`machine urs.earthdata.nasa.gov login <user> password <password>`); the script never prints it |
-
-### Stage 2 — simulation generators
-
-| Script | What it produces |
-| --- | --- |
-| `analysis/02_simulation_examples.R` | Schemes of the generator, galleries of the candidate regimes, variograms, space-time maps and Hovmöller diagrams, the apparent-association matrices, observation classes and the time to generate one replicate |
-| `analysis/02b_generator_recovery.R` | Recovery of the simulated range and AR coefficient in 50 replicates per scenario, and the error of the residual and raw correlations |
-
-### Stage 3 — diagnosis of each variable
-
-| Script | What it produces |
-| --- | --- |
-| `analysis/03_diagnostics.R` | Signatures of every variable in the simulation grid (200 replicates per scenario, run in parallel and resumable), classification accuracy, scale errors and bootstrap coverage |
-| `analysis/03_diagnostics_figures.R` | Scheme of the diagnosis, a didactic variogram, the typical signature of each regime, confusion matrices, scale uncertainty and the threshold calibration curves |
-
-### Stage 4 — grouping and shared bases
-
-| Script | What it produces |
-| --- | --- |
-| `analysis/d4_scenarios.R` | The simulation grid (groups, scenarios, truth, one replicate), shared by the stage scripts |
-| `analysis/04_grouping.R` | Grouping of the stage 3 signatures (hclust and mclust, 200 replicates per scenario), stability over subsamples, and one basis per group with the estimated and the true grouping: k/n, capture of the true large-scale structure and absorption of the true residual |
-| `analysis/04_grouping_figures.R` | Scheme, didactic Moran eigenvector maps, one replicate step by step, agreement with the true groups, stability, degrees of freedom and the k/n threshold curves |
-
-### Stage 5 — correction and the mechanism
-
-| Script | What it produces |
-| --- | --- |
-| `analysis/05a_h2_mechanism.R` | H2a: the error of using different bases against the distance between them (and its theory); H2b: the shared structure a basis leaves behind, by roughness of the shared field and group size; the calibration of the second grouping level |
-| `analysis/05b_correction.R` | The correction on the grid (D4 plus smooth fields and "same regime, different fields"): eight approaches, from no correction to the true grouping, with the error of the residual correlations, capture, degrees of freedom and time |
-| `analysis/05c_whitening_st.R` | Why whitening helps in space-time: its spatial and temporal parts, by kind of shared process |
-| `analysis/05_correction_figures.R` | The didactic scheme, example correlation matrices, and the figures of the three scripts |
-
-### Stage 6 — pilot with the four exploratory methods
-
-| Script | What it produces |
-| --- | --- |
-| `analysis/06_pilot.R` | Twelve pilot scenarios (spatial rough and smooth, temporal, space-time; with no association, with true blocks and random classes, and with contiguous classes), 20 replicates each: every correction approach followed by PCA, MDS (Euclidean and Gower), k-means and SOM, scored with `run_downstream()`; SBSS and MAF (`decorrelate_latent()`) as comparators in space; paired contrasts and the replicates needed for stage 7 |
-| `analysis/06_pilot_figures.R` | A didactic k-means example, spurious patterns, recovery of the truth, contiguous classes, the temporal default and the replicates needed |
-| `analysis/06b_pilot_absorption.R` | How much of the class signal each basis removes, against what its size alone implies |
-
-### Stage 7 — full simulations (pre-registered)
-
-| Script | What it produces |
-| --- | --- |
-| `analysis/07_full_grid.R` | The grid of protocol-v1: 21 base scenarios x five truths (plus perturbations), 100 replicates in space and time and 50 in space-time; every correction approach and every output method |
-| `analysis/07b_h2a.R` | The between-basis error (H2a) on new seeds |
-| `analysis/07_analysis.R` | The pre-registered paired tests with Holm's correction, and the decision rule of the project |
-| `analysis/07c_amendment.R` | Amendment protocol-v1.1: the correlation error against the correlation of the true signal |
-| `analysis/07d_q3_recalibration.R` | Amendment protocol-v1.2: one threshold of the Q3 warning per data family, calibrated on stage 7 and validated on new seeds |
-| `analysis/07e_q3_cause.R` | Why the Q3 statistic depends on the family (exploratory) |
-
-The pre-registered results stay the main ones; the amended results are reported beside
-them and labelled.
-
-### Stage 8 — package
-
-| Script | What it produces |
-| --- | --- |
-| `analysis/08a_q3_reference_pilot.R` | Pilot of a Q3 statistic normalised by an independence reference that keeps each variable's autocorrelation |
-| `analysis/08b_menu_check.R` | Descriptive check of the menu of structures: known period, chosen neighbourhood graph, directional maps |
-| `analysis/08c_q3_size_check.R` | The Q3 thresholds checked at the size of the real case (93 months, 628 cells, 628 x 93) |
-| `analysis/08d_fza_example_tables.R` | The two example tables of the Foz do Amazonas ocean shipped in `inst/extdata/` |
-
-## 5. Getting started
-
-```r
-# R >= 4.3 (developed with R 4.6.1)
-install.packages("renv")
-renv::restore()          # installs the exact package versions in renv.lock
-devtools::load_all()     # loads the package from source
-devtools::test()         # runs the tests (a few take about a minute)
-```
-
-Run the scripts from the repository root, in order (for example
-`Rscript analysis/02_simulation_examples.R`). Outputs go to `results/`.
-
-## 6. Quick start: simulating data with known truth
-
-Every variable is simulated as
-
-```
-x_j = sqrt(s) * L_g  +  sqrt(1 - s) * e_j  +  class effect
-```
-
-where `L_g` is the large-scale component of the variable's group (unit variance), `e` is
-the residual with a known correlation `R_true` across variables, and `s` is the share of
-variance that comes from the large scale.
-
-```r
-library(depprep)
-
-groups <- sim_groups(
-  sim_group("long_a", 6, "exponential", range = 0.5),      # long-range field
-  sim_group("long_b", 6, "exponential", shared_with = "long_a"),  # same field as long_a
-  sim_group("short",  6, "exponential", range = 0.1),      # short-range field
-  sim_group("none",   6, "none")                           # no spatial structure
-)
-R_true <- make_R_true(groups, "blocks", within = 0.5, between = 0)
-
-sim <- sim_spatial(n = 400, groups = groups, R_true = R_true, seed = 1)
-sim                                  # summary of the groups
-dim(sim$X)                           # 400 sites x 24 variables
-cor(sim$components$residual)         # close to R_true
-cor(sim$X)                           # inflated by the shared large-scale fields
-```
-
-Regimes available in each simulator (`range` is the practical range, in units of the side
-of the unit square):
-
-| Simulator | Regimes and parameters |
-| --- | --- |
-| `sim_spatial(n, groups, ...)` | `"exponential"` (`range`, `anisotropy`, `angle`), `"matern"` (the same plus `smoothness` = 0.5, 1.5 or 2.5; smoother fields with the same practical range), `"none"` |
-| `sim_temporal(n_times, groups, ...)` | `"ar1"` (`phi`), `"seasonal"` (`period`, `phase`), `"trend_shift"` (`slope`, `jump`, `shift_at`), `"none"` |
-| `sim_spatiotemporal(n, n_times, groups, ...)` | `"separable_ar1"` (`range`, `phi`), `"separable_seasonal"` (`range`, `period`), `"moving"` (`range`, `velocity`), `"temporal_common"` (`phi`), `"none"`; the spatial fields accept `smoothness` |
-
-Every simulator returns the data `X`, the coordinates and/or times, the true group of each
-variable, the separate components (`large`, `residual`, `class`), `R_true`, the true
-class of each observation, and the seed. Optional observation classes
-(`classes = list(k = 3, type = "random" | "contiguous", effect = 1)`) provide the truth
-for k-means and SOM.
-
-## 7. Quick start: diagnosing each variable
-
-```r
-sig <- diagnose_variables(sim)            # one dependence signature per variable
-sig[, c("variable", "moran_p", "range", "nugget_ratio", "aniso_ratio")]
-classify_regime(sig)                      # "none", "isotropic", "anisotropic", ...
-```
-
-`diagnose_variables()` looks at **one variable at a time** — its variogram, its
-autocorrelation, its periodogram — and never at the correlations between variables, so
-that the later choice of a correction does not reuse the associations it is meant to
-estimate. It works on spatial (`coords`), temporal (`time`) and spatio-temporal
-(`coords` + `index`) data, or directly on a simulation object:
-
-| Family | Signature components |
-| --- | --- |
-| Spatial | Moran's I and p-value; nugget, sill and practical range of the best of an exponential and a spherical variogram; anisotropy ratio and direction |
-| Temporal | lag-1 autocorrelation, AR(1) coefficient and AIC order, Ljung-Box p-value, dominant seasonal period and its strength, trend R-squared |
-| Spatio-temporal | the spatial statistics on time slices, the temporal ones on sites, and a shift indicator that detects a pattern moving in one direction |
-
-With `B > 0` it adds a parametric bootstrap of the range and of phi (standard error and
-90% interval). `classify_regime()` turns a signature into a regime type with explicit
-thresholds (`default_thresholds()`), calibrated on the stage 3 simulations: a variable is
-dependent when Moran's or the Ljung-Box p-value is below 0.05, anisotropic when the
-anisotropy ratio is above 2.5, seasonal when the seasonal strength is above 0.2.
-
-## 8. Quick start: groups and shared bases
-
-```r
-sig <- diagnose_variables(sim)
-gr  <- group_regimes(sig, data = sim, B = 50, seed = 1)   # groups + stability
-gr[, c("variable", "group", "group_type", "stability", "ambiguous")]
-
-members <- gr$variable[gr$group == "g1"]
-b <- build_group_basis(sim$X[, members], coords = sim$coords,
-                       type = gr$group_type[gr$group == "g1"][1], seed = 1)
-b                                         # one basis for every variable of the group
-```
-
-`group_regimes()` keeps the variables without dependence in their own group (no basis)
-and groups the others on their signature components, using only the signatures. With
-`B > 0` it repeats the grouping on subsamples and flags unstable (ambiguous) variables.
-`build_group_basis()` selects one basis for the whole group by forward selection among
-orthonormal candidates — Moran eigenvector maps in space, harmonics, trend and slow
-temporal eigenvectors in time, and their products in space-time — with permutation tests
-and a cap on the share of degrees of freedom (`kn_max`). `union_basis()` joins the bases
-of two groups for the pairs of variables across them.
-
-## 9. Quick start: correcting and verifying
-
-```r
-sig <- diagnose_variables(sim)
-gr <- group_regimes(sig)
-diagnosis_table(sig, gr)                   # what the diagnosis found, variable by variable
-cr <- correct(sim, gr)                     # the defaults below
-cr$R                                       # corrected correlation matrix (for PCA)
-head(cr$X)                                 # corrected data (for k-means, SOM, MDS, HDBSCAN)
-v <- verify(cr, sim)                       # what was removed and what was kept
-report_correction(cr, sim, v, file = "report.html",    # one HTML page for the user
-                  signature = sig, grouping = gr)
-correct(sim, gr, scope = "groups")         # one basis per group, unions across groups
-run_app()                                  # the same workflow, point and click
-```
-
-Defaults, chosen from the simulation studies:
-
-- **The correlation matrix `R`** (for PCA): in space and in time, one global basis of the
-  dependent variables, conditional mode; in space-time, whitening group by group.
-- **The data matrix `X`** (for MDS, k-means, SOM, HDBSCAN): each variable corrected with
-  a basis selected on that variable alone (`data_basis = "own"`). A shared basis takes
-  part of every variable's class signal away; a basis per variable keeps the classes.
-- Variables without dependence are never corrected among themselves.
-
-### Choosing the structures yourself: the menu
-
-When you know the system (the period of a cycle, the direction of a current), say so
-with a menu; the parameters are still searched within it, with the same tests and cap
-on k/n:
-
-```r
-m <- basis_menu(term_trend(), term_cycle(period = 12))      # time: trend and an annual cycle
-m <- basis_menu(term_trend(), term_mem(W = "auto"))         # space: choose the neighbourhood graph
-m <- basis_menu(term_trend(), term_aem(direction = 45))     # space: a directional process
-cr <- correct(sim, gr, menu = m)                            # one menu, or a list named by group
-```
-
-Every term is a function of the positions only, so it can be shared by a group. Terms
-that are functions of the variable itself (its lags, the mean of its neighbours) are
-filters: they change what is estimated (the correlation of the innovations) and are not
-in the menu.
-
-### What `verify()` reports
-
-The residual structure of each variable (tested against white noise with the same basis
-removed), Moran correlograms and a multivariate Mantel correlogram, how each
-correlation changed (Delta R), the part of each correlation carried by the large scale,
-the local Moran's I of the corrected variables (where structure is left, in space), and
-the warning of signal at the scale of the basis (question Q3): when much of the
-association between variables lived at the scale of the basis, classes that are regions
-or periods would be removed by the correction. The same Moran correlograms, local
-Moran's I and (in time) Ljung-Box tests are given for the raw data
-(`correlograms_before`, `lisa_before`), so that what the diagnosis saw can be compared
-with what the correction left.
-
-### Exploring the diagnosis before the correction
-
-Everything the diagnosis computed is kept for the user to explore:
-`diagnosis_table(sig, gr)` puts each variable's signature (Moran's I and its p-value,
-the variogram and its range, nugget and anisotropy in space; the lag-1 autocorrelation,
-the AR coefficient, the Ljung-Box test, the period and its strength and the trend in
-time) beside its regime, group and stability. The report of `report_correction()` opens
-with this table, and the app shows it in step 3 and lets you download it, together with
-the local Moran's I before and after.
-
-### The warning of signal at the scale of the basis (Q3)
-
-The correction removes what varies at the scale of its basis. When the classes you look
-for are regions or periods, they live at that scale too and are removed with the
-dependence. `verify()` measures how much of the association between variables was
-carried by the removed part:
-
-```
-Q3 statistic = mean over all pairs of variables of |cov_large| / (sd_x sd_y)
-```
-
-where `cov_large` is the covariance of the two variables' parts on the basis. The warning
-(`v$q3$warning`) is raised when the statistic exceeds the threshold of the data family:
-
-| Data | Threshold | Validated on new seeds (warnings without / with contiguous classes) | At the size of the case study |
-| --- | --- | --- | --- |
-| Spatial | 0.16 | at most 1.2% / at least 98.8% (stage 7 grid) | n = 628 sites: 0% / 97-99% |
-| Temporal | 0.19 | at most 0.3% / 99.7% (stage 7 grid) | T = 93 months: 0-2% / 99-100% |
-| Space-time | 0.13 | 0% / 99% (stage 7 grid) | 628 sites x 93 months: 0% / 100% |
-
-The thresholds differ by family because the statistic grows with the size of the basis
-even without classes: the large-scale parts of independent autocorrelated variables are
-correlated by chance, more so in short series. Each threshold is the midpoint between the
-97.5th percentile of the truths without contiguous classes and the 5th percentile of the
-contiguous truth (`analysis/07d_q3_recalibration.R`), checked at the size of the real
-case by `analysis/08c_q3_size_check.R` (criterion: at most 5% of warnings without
-contiguous classes, at least 90% with them). A statistic normalised by a reference of
-independent surrogates (`analysis/08a_q3_reference_pilot.R`) was tried and not adopted:
-it separated the truths worse, because contiguous classes also make each variable more
-autocorrelated, so the reference rises with them and hides the signal. The threshold can be set with `q3_threshold`.
-
-When the warning fires, the correlations are not wrong: much of the association lived at
-the scale of the basis. If the classes you seek are regions or periods, analyse the raw
-data, or use clustering constrained by contiguity (section 11).
-
-`correct()` has three modes: `"conditional"` (residuals on the group bases),
-`"whiten"` (the observations are whitened with each group's estimated covariance) and
-`"scale"` (one correlation matrix per band of scales). What the simulations show so far:
-the error of using different bases for two variables is real but small (of order
-rho k/n); the larger error is the part of a shared large-scale process that no basis
-captures, which grows with the roughness of that process. A correction cannot always
-remove it: at scales finer than the basis, a shared process and a genuine association
-leave the same trace. In space-time, observation over time separates them better, and
-whitening reduces the error substantially.
-
-### The basis is feature engineering: three rules for your own features
-
-The basis of the correction is a set of positional features (trend surfaces, Moran
-eigenvector maps, harmonics, autoregressive lags). In predictive regression, features
-that explain more are better. Here they are not: features that explain more of the
-large scale also remove more of the association you want to keep, which is why the
-bases are selected with tests and a cap on k/n. Three consequences for the features
-you build yourself:
-
-1. **Build derived features before the diagnosis.** Anomalies from a climatology,
-   indices (such as NDVI), ratios and transformations change a variable's dependence
-   regime: an anomaly is already a seasonal correction, and a ratio mixes the regimes
-   of its two variables. Diagnose and correct the variables you will actually analyse.
-2. **Do not build features from correlations between variables before correcting**
-   (for example, PCA axes): the diagnosis uses each variable alone, so that the
-   associations it is meant to estimate are not used twice.
-3. **Reuse the basis in a downstream model.** If a regression on the corrected data
-   uses positional features (smooths of the coordinates, Moran maps, lags), use the
-   basis that `correct()` returns (`cr$bases`). Different positional features bring
-   back the error of correcting two variables with different bases.
-
-With autocorrelated data, positional features also inflate the apparent explanatory
-power of predictive models under random validation; blocked validation in space or
-time removes much of it (Roberts et al. 2017, Ecography 40:913-929; Ploton et al. 2020,
-Nature Communications 11:4540).
-
-## 10. The app: the same workflow without code
+## 3. The app: the same workflow without code
 
 `run_app()` opens a point-and-click interface (Shiny) in the browser. It runs the same
-functions as the code above and, at the end, gives you the R code that reproduces every
-choice you made.
+functions as the code in sections 9 to 12 and, at the end, gives you the R code that
+reproduces every choice you made.
 
 **Start it from R or RStudio:**
 
@@ -582,7 +231,7 @@ Notes and limits shown in the app: the share of missing values, when there are a
 projected beyond about 11 degrees of latitude; and data with more than a few thousand
 observations are slow (the correction of a 628-site x 93-month grid takes hours).
 
-## 11. Known limits
+## 4. Known limits
 
 ### Why purely spatial regimes are hard to tell apart
 
@@ -640,7 +289,7 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
 ### Not supported yet
 
 - **Missing positions and drivers.** Missing values in the variables are accepted
-  (section 10, "Missing values"), but the coordinates, the times and the drivers must be
+  (section 3, "Missing values"), but the coordinates, the times and the drivers must be
   complete. Nothing is imputed, by design: filling gaps would add a dependence that
   belongs to the interpolation. The scale mode of `correct()` still needs complete
   data.
@@ -648,9 +297,9 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
   moving patterns) are not implemented.
 - **Coordinates in degrees** are used as they are, with a degree of longitude taken as a
   degree of latitude: fine near the equator, but beyond about 11 degrees of latitude
-  they should be projected first (section 10).
+  they should be projected first (section 3).
 
-## 12. Reproducibility
+## 5. Reproducibility
 
 - **Seeds.** Every simulation uses an explicit seed, stored in its output. The generators
   use the L'Ecuyer-CMRG generator with one independent stream per component (coordinates,
@@ -662,6 +311,354 @@ than a single map. Results: `analysis/03_*` and `analysis/04_*`.
   0.05, residual correlations within their sampling error, exact displacement of the
   moving pattern, and more.
 - **Package versions.** `renv.lock` pins every package.
+- **One table of every script.** Section 7 lists each analysis script with the steps whose
+  results it reads, the network or login it needs and the time it took, so any script
+  can be found, run and audited on its own.
+- **Provenance of each run.** Run through `analysis/run/` (section 7), a script records in
+  `results/provenance/<script>.json` the commit, the tracked files changed since it, the
+  seeds written in the script, the time, its outputs and the R session (R, platform, the
+  hash of `renv.lock`, the versions of the imported packages).
+- **Raw data.** `data/raw/` is not tracked; `data/raw_manifest.csv` (tracked, written by
+  `analysis/00_raw_manifest.R`) gives the size, SHA-256, date, source, product and
+  version of every downloaded file. `Rscript analysis/00_raw_manifest.R check` compares
+  your copy with it.
+
+## 6. What is in this repository
+
+This repository holds **code only**: the R package, its tests and the script of each
+project stage. Figures and tables are *not* versioned; every script regenerates them
+from recorded seeds into `results/` on your machine.
+
+| Path | Content |
+| --- | --- |
+| `R/` | Package functions: simulation generators, diagnosis, grouping, bases and their menu, correction, verification, report and app |
+| `tests/testthat/` | Tests with known truth for every function |
+| `man/` | Function documentation (generated with roxygen2) |
+| `inst/extdata/` | Example tables of the Foz do Amazonas case study (section 3) |
+| `analysis/` | One script per project stage, numbered in the order they are run |
+| `results/` | Created by the scripts; not tracked by git |
+| `data/raw/` | Downloaded raw data; not tracked by git, never modified |
+| `renv.lock` | Exact versions of every R package used |
+
+## 7. Project stages and their scripts
+
+Stages 0 to 8 are done; stage 9 (the real-data application) is in progress. Every
+analysis script is listed below, in the order it is run, so that each one can be found,
+run and audited on its own. **Needs** gives the steps whose outputs in `results/` the
+script reads: run those first. The same table, in tab-separated form, drives the runner
+(`analysis/run/steps.tsv`).
+
+```bash
+bash analysis/run/run_all.sh 05a                # one step, recording its provenance
+bash analysis/run/run_all.sh 05a 06g            # a range of steps, in the order of the table
+DRY_RUN=1 bash analysis/run/run_all.sh          # list every step without running it
+SKIP_NETWORK=1 bash analysis/run/run_all.sh     # leave out the steps that download
+Rscript analysis/05a_h2_mechanism.R             # a script run directly records no provenance
+```
+
+Run from any folder; `RSCRIPT` sets the R to use. Each step writes its log to
+`results/logs/<step>.log`; a failed step stops the run.
+
+| Stage (package code) | Step | Script | What it produces | Needs | Access | Time |
+| --- | --- | --- | --- | --- | --- | --- |
+| **0. Environment**<br>`renv.lock` | 00 | `00_raw_manifest.R` | Manifest of `data/raw/` (size, SHA-256, date, source, product, version); `check` compares your copy with it | — | — | minutes |
+| **1. Real data: is there a gap?** | 01a | `01a_fza_study_area.R` | Study area from the ANP basin limits and ETOPO1 topography | — | ANP WFS, NOAA ERDDAP | minutes |
+| | 01b | `01b_fza_data_feasibility.R` | Catalogue of candidate L3 products; monthly cloud-free coverage of the products served anonymously by ERDDAP | 01a | NOAA ERDDAP | minutes |
+| | 01c | `01c_fza_nasa_feasibility.R` | The same for NASA products (SMAP salinity and soil moisture, MODIS land and ocean colour, GPM IMERG), subset with OPeNDAP | 01a | Earthdata login (note 1) | under 1 h |
+| **2. Simulation with known truth**<br>`R/sim_*.R` | 02 | `02_simulation_examples.R` | Schemes and galleries of the generators, variograms, space-time maps, apparent-association matrices, observation classes, time per replicate | — | — | minutes |
+| | 02b | `02b_generator_recovery.R` | Recovery of the simulated range and AR coefficient (50 replicates per scenario); error of the residual and raw correlations | — | — | — |
+| **3. Diagnosis of each variable**<br>`R/diagnose*.R`, `R/classify.R` | 03 | `03_diagnostics.R` | Signatures of every variable of the grid (200 replicates per scenario, parallel, resumable): accuracy, scale errors, bootstrap coverage | — | — | — |
+| | 03f | `03_diagnostics_figures.R` | Figures: scheme, didactic variogram, typical signatures, confusion matrices, threshold curves | 03 | — | minutes |
+| **4. Groups and shared bases**<br>`R/group.R`, `R/basis.R` | 04 | `04_grouping.R` | Grouping of the signatures (hclust, mclust), stability over subsamples, one basis per group: k/n, capture of the true large scale, absorption of the true residual (resumable) | 03 | — | — |
+| | 04f | `04_grouping_figures.R` | Figures: scheme, Moran eigenvector maps, one replicate step by step, agreement, stability, k/n curves | 03 04 | — | minutes |
+| **5. Correction and the mechanism**<br>`R/correct.R`, `R/verify.R` | 05a | `05a_h2_mechanism.R` | H2a: the error of different bases against their distance; H2b: the shared structure a basis leaves; calibration of the second grouping level | — | — | 30 min |
+| | 05b | `05b_correction.R` | The correction on the grid: eight approaches, from none to the true grouping; error of the residual correlations, capture, degrees of freedom, time | 03 05a | — | 5 h |
+| | 05c | `05c_whitening_st.R` | Why whitening helps in space-time, by kind of shared process | — | — | 10 min |
+| | 05f | `05_correction_figures.R` | Figures of stage 5 | 05a 05b | — | minutes |
+| **6. Pilot with the exploratory methods**<br>`R/downstream.R`, `R/comparators.R` | 06 | `06_pilot.R` | Pilot scenarios, 20 replicates each: every correction followed by PCA, MDS (Euclidean and Gower), k-means and SOM, scored with `run_downstream()`; SBSS and MAF (`decorrelate_latent()`) as comparators; paired contrasts and the replicates needed for stage 7 | — | — | 2.5 h |
+| | 06f | `06_pilot_figures.R` | Figures of stage 6 | 06 | — | minutes |
+| | 06b | `06b_pilot_absorption.R` | How much class signal each basis removes, against what its size alone implies | — | — | 5 min |
+| | 06c | `06c_q3_warning.R` | Calibration of the first threshold of the Q3 warning | — | — | 5 min |
+| | 06d | `06d_whitening_filters.R` | Whitening filters compared | — | — | 5 min |
+| | 06h | `06f_hdbscan_pca.R` | HDBSCAN as a fifth method, and the metric of the PCA | — | — | — |
+| | 06g | `06g_protocol_tests.R` | Tests on the pilot that fixed the thresholds of the protocol | 05b 06 | — | — |
+| **7. Full pre-registered simulations** | 07 | `07_full_grid.R` | Grid of protocol-v1: 21 base scenarios x five truths (plus perturbations), 100 replicates in space and time, 50 in space-time; every approach and method (resumable, 16 processes) | — | — | 9 h |
+| | 07b | `07b_h2a.R` | The between-basis error (H2a) on new seeds | 05a | — | — |
+| | 07a | `07_analysis.R` | Pre-registered paired tests with Holm's correction, and the decision rule | 07 07b | — | minutes |
+| | 07c | `07c_amendment.R` | Amendment protocol-v1.1: the correlation error against the true signal | 07 | — | — |
+| | 07d1 | `07d_q3_recalibration.R calibrate` | Amendment protocol-v1.2: one Q3 threshold per data family | 07 | — | minutes |
+| | 07d2 | `07d_q3_recalibration.R validate` | Validation of those thresholds on new seeds | 07d1 | — | — |
+| | 07e | `07e_q3_cause.R` | Why the Q3 statistic depends on the family (exploratory) | 07 07d2 | — | — |
+| **8. Package: menu, report, app**<br>`R/menu.R`, `R/report.R`, `R/app.R` | 08a | `08a_q3_reference_pilot.R` | Pilot of a Q3 statistic normalised by an independence reference that keeps each variable's autocorrelation | 06 07 | — | — |
+| | 08b | `08b_menu_check.R` | Descriptive check of the menu of structures: known period, chosen graph, directional maps | — | — | — |
+| | 08c | `08c_q3_size_check.R` | The Q3 thresholds at the size of the real case (93 months, 628 cells, 628 x 93) | 07d1 | — | — |
+| | 08d | `08d_fza_example_tables.R` | The example tables of the Foz do Amazonas ocean in `inst/extdata/` | 01a 01b | — | minutes |
+| | 08e | `08e_sample_sites_check.R` | Bases chosen on a sample of sites, against all sites | — | — | — |
+| | 08f | `08f_correct_time.R` | Time of the correction on one and on several processes | — | — | — |
+| **9. Real data: the Foz do Amazonas ocean** (in progress)<br>`R/partition.R` | 09a | `09a_fza_ocean_cube.R` | The ocean cube (cell x month) and the drivers; resumes from the files present | 01a | Earthdata, NOAA ERDDAP, ANA, NOAA PSL | hours (downloads), minutes (cached) |
+| | 09b | `09b_fza_gap_census.R` | Census of the gaps of the cube | 01a 01b 09a | — | minutes |
+| | 09c | `09c_missing_check.R` | What gaps cost the correction: 10% to 30% missing, at random and in cloud-like patches | — | — | 1-2 h |
+| | 09d | `09d_fza_ocean_analysis.R` | The ocean case of protocol-v1.3: five runs and the output methods, raw against corrected (resumable) | 09a | — | 2-3 h |
+
+Notes:
+
+1. **Earthdata login.** A free [NASA Earthdata](https://urs.earthdata.nasa.gov) account,
+   stored in `~/_netrc` (`machine urs.earthdata.nasa.gov login <user> password
+   <password>`); the scripts never print it.
+2. **Why Level-3 data.** The application uses L3 satellite time series (gridded, not
+   gap-filled) of the Foz do Amazonas basin, Brazilian Equatorial Margin, in two case
+   studies sharing one rectangle: the ocean (the marine part of the basin, official ANP
+   limit) and the land (within 200 km of that coast). Gap-filled (L4) products add
+   spatial autocorrelation that belongs to the interpolation, not to the process.
+3. **Amendments.** In stage 7 the pre-registered results stay the main ones; the amended
+   results are reported beside them and labelled.
+4. **Shared scenarios.** `analysis/d4_scenarios.R` defines the simulation grid (groups,
+   scenarios, truth) and is read by the stage scripts; it is not run on its own.
+5. **Earlier reruns.** `analysis/run/history/` keeps the shell scripts with which earlier
+   stages were rerun, as a record.
+
+## 8. Getting started
+
+```r
+# R >= 4.3 (developed with R 4.6.1)
+install.packages("renv")
+renv::restore()          # installs the exact package versions in renv.lock
+devtools::load_all()     # loads the package from source
+devtools::test()         # runs the tests (a few take about a minute)
+```
+
+Run the analysis scripts from the repository root, alone or in order, as shown in
+section 7. Outputs go to `results/`.
+
+## 9. Quick start: simulating data with known truth
+
+Every variable is simulated as
+
+```
+x_j = sqrt(s) * L_g  +  sqrt(1 - s) * e_j  +  class effect
+```
+
+where `L_g` is the large-scale component of the variable's group (unit variance), `e` is
+the residual with a known correlation `R_true` across variables, and `s` is the share of
+variance that comes from the large scale.
+
+```r
+library(depprep)
+
+groups <- sim_groups(
+  sim_group("long_a", 6, "exponential", range = 0.5),      # long-range field
+  sim_group("long_b", 6, "exponential", shared_with = "long_a"),  # same field as long_a
+  sim_group("short",  6, "exponential", range = 0.1),      # short-range field
+  sim_group("none",   6, "none")                           # no spatial structure
+)
+R_true <- make_R_true(groups, "blocks", within = 0.5, between = 0)
+
+sim <- sim_spatial(n = 400, groups = groups, R_true = R_true, seed = 1)
+sim                                  # summary of the groups
+dim(sim$X)                           # 400 sites x 24 variables
+cor(sim$components$residual)         # close to R_true
+cor(sim$X)                           # inflated by the shared large-scale fields
+```
+
+Regimes available in each simulator (`range` is the practical range, in units of the side
+of the unit square):
+
+| Simulator | Regimes and parameters |
+| --- | --- |
+| `sim_spatial(n, groups, ...)` | `"exponential"` (`range`, `anisotropy`, `angle`), `"matern"` (the same plus `smoothness` = 0.5, 1.5 or 2.5; smoother fields with the same practical range), `"none"` |
+| `sim_temporal(n_times, groups, ...)` | `"ar1"` (`phi`), `"seasonal"` (`period`, `phase`), `"trend_shift"` (`slope`, `jump`, `shift_at`), `"none"` |
+| `sim_spatiotemporal(n, n_times, groups, ...)` | `"separable_ar1"` (`range`, `phi`), `"separable_seasonal"` (`range`, `period`), `"moving"` (`range`, `velocity`), `"temporal_common"` (`phi`), `"none"`; the spatial fields accept `smoothness` |
+
+Every simulator returns the data `X`, the coordinates and/or times, the true group of each
+variable, the separate components (`large`, `residual`, `class`), `R_true`, the true
+class of each observation, and the seed. Optional observation classes
+(`classes = list(k = 3, type = "random" | "contiguous", effect = 1)`) provide the truth
+for k-means and SOM.
+
+## 10. Quick start: diagnosing each variable
+
+```r
+sig <- diagnose_variables(sim)            # one dependence signature per variable
+sig[, c("variable", "moran_p", "range", "nugget_ratio", "aniso_ratio")]
+classify_regime(sig)                      # "none", "isotropic", "anisotropic", ...
+```
+
+`diagnose_variables()` looks at **one variable at a time** — its variogram, its
+autocorrelation, its periodogram — and never at the correlations between variables, so
+that the later choice of a correction does not reuse the associations it is meant to
+estimate. It works on spatial (`coords`), temporal (`time`) and spatio-temporal
+(`coords` + `index`) data, or directly on a simulation object:
+
+| Family | Signature components |
+| --- | --- |
+| Spatial | Moran's I and p-value; nugget, sill and practical range of the best of an exponential and a spherical variogram; anisotropy ratio and direction |
+| Temporal | lag-1 autocorrelation, AR(1) coefficient and AIC order, Ljung-Box p-value, dominant seasonal period and its strength, trend R-squared |
+| Spatio-temporal | the spatial statistics on time slices, the temporal ones on sites, and a shift indicator that detects a pattern moving in one direction |
+
+With `B > 0` it adds a parametric bootstrap of the range and of phi (standard error and
+90% interval). `classify_regime()` turns a signature into a regime type with explicit
+thresholds (`default_thresholds()`), calibrated on the stage 3 simulations: a variable is
+dependent when Moran's or the Ljung-Box p-value is below 0.05, anisotropic when the
+anisotropy ratio is above 2.5, seasonal when the seasonal strength is above 0.2.
+
+## 11. Quick start: groups and shared bases
+
+```r
+sig <- diagnose_variables(sim)
+gr  <- group_regimes(sig, data = sim, B = 50, seed = 1)   # groups + stability
+gr[, c("variable", "group", "group_type", "stability", "ambiguous")]
+
+members <- gr$variable[gr$group == "g1"]
+b <- build_group_basis(sim$X[, members], coords = sim$coords,
+                       type = gr$group_type[gr$group == "g1"][1], seed = 1)
+b                                         # one basis for every variable of the group
+```
+
+`group_regimes()` keeps the variables without dependence in their own group (no basis)
+and groups the others on their signature components, using only the signatures. With
+`B > 0` it repeats the grouping on subsamples and flags unstable (ambiguous) variables.
+`build_group_basis()` selects one basis for the whole group by forward selection among
+orthonormal candidates — Moran eigenvector maps in space, harmonics, trend and slow
+temporal eigenvectors in time, and their products in space-time — with permutation tests
+and a cap on the share of degrees of freedom (`kn_max`). `union_basis()` joins the bases
+of two groups for the pairs of variables across them.
+
+## 12. Quick start: correcting and verifying
+
+```r
+sig <- diagnose_variables(sim)
+gr <- group_regimes(sig)
+diagnosis_table(sig, gr)                   # what the diagnosis found, variable by variable
+cr <- correct(sim, gr)                     # the defaults below
+cr$R                                       # corrected correlation matrix (for PCA)
+head(cr$X)                                 # corrected data (for k-means, SOM, MDS, HDBSCAN)
+v <- verify(cr, sim)                       # what was removed and what was kept
+report_correction(cr, sim, v, file = "report.html",    # one HTML page for the user
+                  signature = sig, grouping = gr)
+correct(sim, gr, scope = "groups")         # one basis per group, unions across groups
+run_app()                                  # the same workflow, point and click
+```
+
+Defaults, chosen from the simulation studies:
+
+- **The correlation matrix `R`** (for PCA): in space and in time, one global basis of the
+  dependent variables, conditional mode; in space-time, whitening group by group.
+- **The data matrix `X`** (for MDS, k-means, SOM, HDBSCAN): each variable corrected with
+  a basis selected on that variable alone (`data_basis = "own"`). A shared basis takes
+  part of every variable's class signal away; a basis per variable keeps the classes.
+- Variables without dependence are never corrected among themselves.
+
+### Choosing the structures yourself: the menu
+
+When you know the system (the period of a cycle, the direction of a current), say so
+with a menu; the parameters are still searched within it, with the same tests and cap
+on k/n:
+
+```r
+m <- basis_menu(term_trend(), term_cycle(period = 12))      # time: trend and an annual cycle
+m <- basis_menu(term_trend(), term_mem(W = "auto"))         # space: choose the neighbourhood graph
+m <- basis_menu(term_trend(), term_aem(direction = 45))     # space: a directional process
+cr <- correct(sim, gr, menu = m)                            # one menu, or a list named by group
+```
+
+Every term is a function of the positions only, so it can be shared by a group. Terms
+that are functions of the variable itself (its lags, the mean of its neighbours) are
+filters: they change what is estimated (the correlation of the innovations) and are not
+in the menu.
+
+### What `verify()` reports
+
+The residual structure of each variable (tested against white noise with the same basis
+removed), Moran correlograms and a multivariate Mantel correlogram, how each
+correlation changed (Delta R), the part of each correlation carried by the large scale,
+the local Moran's I of the corrected variables (where structure is left, in space), and
+the warning of signal at the scale of the basis (question Q3): when much of the
+association between variables lived at the scale of the basis, classes that are regions
+or periods would be removed by the correction. The same Moran correlograms, local
+Moran's I and (in time) Ljung-Box tests are given for the raw data
+(`correlograms_before`, `lisa_before`), so that what the diagnosis saw can be compared
+with what the correction left.
+
+### Exploring the diagnosis before the correction
+
+Everything the diagnosis computed is kept for the user to explore:
+`diagnosis_table(sig, gr)` puts each variable's signature (Moran's I and its p-value,
+the variogram and its range, nugget and anisotropy in space; the lag-1 autocorrelation,
+the AR coefficient, the Ljung-Box test, the period and its strength and the trend in
+time) beside its regime, group and stability. The report of `report_correction()` opens
+with this table, and the app shows it in step 3 and lets you download it, together with
+the local Moran's I before and after.
+
+### The warning of signal at the scale of the basis (Q3)
+
+The correction removes what varies at the scale of its basis. When the classes you look
+for are regions or periods, they live at that scale too and are removed with the
+dependence. `verify()` measures how much of the association between variables was
+carried by the removed part:
+
+```
+Q3 statistic = mean over all pairs of variables of |cov_large| / (sd_x sd_y)
+```
+
+where `cov_large` is the covariance of the two variables' parts on the basis. The warning
+(`v$q3$warning`) is raised when the statistic exceeds the threshold of the data family:
+
+| Data | Threshold | Validated on new seeds (warnings without / with contiguous classes) | At the size of the case study |
+| --- | --- | --- | --- |
+| Spatial | 0.16 | at most 1.2% / at least 98.8% (stage 7 grid) | n = 628 sites: 0% / 97-99% |
+| Temporal | 0.19 | at most 0.3% / 99.7% (stage 7 grid) | T = 93 months: 0-2% / 99-100% |
+| Space-time | 0.13 | 0% / 99% (stage 7 grid) | 628 sites x 93 months: 0% / 100% |
+
+The thresholds differ by family because the statistic grows with the size of the basis
+even without classes: the large-scale parts of independent autocorrelated variables are
+correlated by chance, more so in short series. Each threshold is the midpoint between the
+97.5th percentile of the truths without contiguous classes and the 5th percentile of the
+contiguous truth (`analysis/07d_q3_recalibration.R`), checked at the size of the real
+case by `analysis/08c_q3_size_check.R` (criterion: at most 5% of warnings without
+contiguous classes, at least 90% with them). A statistic normalised by a reference of
+independent surrogates (`analysis/08a_q3_reference_pilot.R`) was tried and not adopted:
+it separated the truths worse, because contiguous classes also make each variable more
+autocorrelated, so the reference rises with them and hides the signal. The threshold can be set with `q3_threshold`.
+
+When the warning fires, the correlations are not wrong: much of the association lived at
+the scale of the basis. If the classes you seek are regions or periods, analyse the raw
+data, or use clustering constrained by contiguity (section 4).
+
+`correct()` has three modes: `"conditional"` (residuals on the group bases),
+`"whiten"` (the observations are whitened with each group's estimated covariance) and
+`"scale"` (one correlation matrix per band of scales). What the simulations show so far:
+the error of using different bases for two variables is real but small (of order
+rho k/n); the larger error is the part of a shared large-scale process that no basis
+captures, which grows with the roughness of that process. A correction cannot always
+remove it: at scales finer than the basis, a shared process and a genuine association
+leave the same trace. In space-time, observation over time separates them better, and
+whitening reduces the error substantially.
+
+### The basis is feature engineering: three rules for your own features
+
+The basis of the correction is a set of positional features (trend surfaces, Moran
+eigenvector maps, harmonics, autoregressive lags). In predictive regression, features
+that explain more are better. Here they are not: features that explain more of the
+large scale also remove more of the association you want to keep, which is why the
+bases are selected with tests and a cap on k/n. Three consequences for the features
+you build yourself:
+
+1. **Build derived features before the diagnosis.** Anomalies from a climatology,
+   indices (such as NDVI), ratios and transformations change a variable's dependence
+   regime: an anomaly is already a seasonal correction, and a ratio mixes the regimes
+   of its two variables. Diagnose and correct the variables you will actually analyse.
+2. **Do not build features from correlations between variables before correcting**
+   (for example, PCA axes): the diagnosis uses each variable alone, so that the
+   associations it is meant to estimate are not used twice.
+3. **Reuse the basis in a downstream model.** If a regression on the corrected data
+   uses positional features (smooths of the coordinates, Moran maps, lags), use the
+   basis that `correct()` returns (`cr$bases`). Different positional features bring
+   back the error of correcting two variables with different bases.
+
+With autocorrelated data, positional features also inflate the apparent explanatory
+power of predictive models under random validation; blocked validation in space or
+time removes much of it (Roberts et al. 2017, Ecography 40:913-929; Ploton et al. 2020,
+Nature Communications 11:4540).
 
 ## 13. License
 
