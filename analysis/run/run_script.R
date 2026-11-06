@@ -24,6 +24,8 @@ seeds <- unique(unlist(regmatches(src, gregexpr("\\b(base_seed|seed)\\s*(<-|=)\\
 stamp <- function() list.files("results", recursive = TRUE, full.names = TRUE)
 mtimes <- function(f) stats::setNames(file.info(f)$mtime, f)
 before <- mtimes(stamp())
+commit <- git("rev-parse", "HEAD")                       # at the start: commits made during a long run do not count
+changed_tracked <- git("status", "--porcelain", "--untracked-files=no")
 start <- Sys.time()
 status <- system2(file.path(R.home("bin"), "Rscript"), c(shQuote(script), shQuote(extra)))
 end <- Sys.time()
@@ -38,8 +40,8 @@ version_of <- function(p) tryCatch(as.character(utils::packageVersion(p)), error
 
 record <- list(
   script = script, arguments = I(extra), script_sha256 = sha256(script),
-  commit = git("rev-parse", "HEAD"),
-  changed_tracked_files = I(git("status", "--porcelain", "--untracked-files=no")),
+  commit = commit,
+  changed_tracked_files = I(changed_tracked),
   seeds_in_script = I(seeds),
   start = format(start, "%Y-%m-%d %H:%M:%S %z"), end = format(end, "%Y-%m-%d %H:%M:%S %z"),
   seconds = round(as.numeric(difftime(end, start, units = "secs"))), exit_status = status,
