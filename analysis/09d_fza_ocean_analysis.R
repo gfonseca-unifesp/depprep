@@ -351,7 +351,8 @@ for (i in seq_len(nrow(runs))) {
       same_share_raw = cg_raw[["same_share"]], p95_raw = cg_raw[["p95"]], regions_raw = cg_raw[["regions"]] == 1,
       same_share_corrected = cg_cor[["same_share"]], p95_corrected = cg_cor[["p95"]], regions_corrected = cg_cor[["regions"]] == 1,
       shelf_share_of_main_raw_class = {
-        cl <- modal(la); tab <- table(cl, cells$region); top <- which.max(tab[, "shelf"]); tab[top, "shelf"] / sum(tab[top, ])
+        cl <- modal(la); tab <- table(cl, cells$region)
+        if (nzchar(region)) NA_real_ else { top <- which.max(tab[, "shelf"]); tab[top, "shelf"] / sum(tab[top, ]) }
       })
     for (h in c("all", "January-June", "July-December")) {
       rows <- if (h == "all") seq_along(whole) else which(half[whole] == h)
