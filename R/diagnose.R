@@ -52,7 +52,8 @@
 #' @param seed Seed for the bootstrap (required when `B > 0`).
 #' @param k Number of nearest neighbours for Moran's I.
 #' @param nsim Number of permutations for Moran's p-value (0 = normal approximation,
-#'   which is optimistic in small samples).
+#'   which is optimistic in small samples). In space-time the spatial p-value is the
+#'   smallest of 6 time slices times 6, so `nsim` must be at least 120.
 #' @param perm_seed Seed of the permutations; each variable gets its own stream, so a
 #'   signature does not depend on the other variables and is reproducible.
 #' @param detrend_r2 R-squared of the spatial trend surface above which the variogram
@@ -88,6 +89,10 @@ diagnose_variables <- function(X, coords = NULL, time = NULL, index = NULL, B = 
     if (!is.null(coords)) "spatial" else if (!is.null(time)) "temporal" else
       stop("Give `coords` (spatial), `time` (temporal) or `coords` and `index` (spatio-temporal).", call. = FALSE)
   if (B > 0 && is.null(seed)) stop("`seed` is required when `B > 0`.", call. = FALSE)
+  # the spatial p-value of space-time data is the smallest of 6 time slices, times 6
+  if (family == "spatiotemporal" && nsim > 0 && 6 / (nsim + 1) >= default_thresholds()$p_dependence) {
+    warning(sprintf("With nsim = %d no variable can show spatial dependence in space-time data: use nsim >= 120.", nsim), call. = FALSE)
+  }
   if (B > 0 && family == "spatiotemporal") {
     warning("The bootstrap is not available for spatio-temporal data; `B` is ignored.", call. = FALSE)
     B <- 0

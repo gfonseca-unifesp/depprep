@@ -37,7 +37,8 @@ the spatio-temporal family.}
 \item{k}{Number of nearest neighbours for Moran's I.}
 
 \item{nsim}{Number of permutations for Moran's p-value (0 = normal approximation,
-which is optimistic in small samples).}
+which is optimistic in small samples). In space-time the spatial p-value is the
+smallest of 6 time slices times 6, so \code{nsim} must be at least 120.}
 
 \item{perm_seed}{Seed of the permutations; each variable gets its own stream, so a
 signature does not depend on the other variables and is reproducible.}

@@ -77,3 +77,11 @@ test_that("the 90% bootstrap interval of phi has roughly nominal coverage", {
   expect_gt(mean(cover), 0.75)
   expect_lt(mean(cover), 0.99)
 })
+
+test_that("too few permutations for space-time data give a warning", {
+  g <- sim_groups(sim_group("sep", 2, "separable_ar1", range = 0.5, phi = 0.9))
+  s <- sim_spatiotemporal(30, 40, g, seed = 1)
+  expect_warning(diagnose_variables(s, nsim = 99), "no variable can show spatial dependence")
+  expect_no_warning(diagnose_variables(s, nsim = 0))
+  expect_no_warning(diagnose_variables(s, nsim = 120))
+})
