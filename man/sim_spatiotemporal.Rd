@@ -12,7 +12,10 @@ sim_spatiotemporal(
   coords = NULL,
   classes = NULL,
   seed,
-  counts = 0
+  counts = 0,
+  residual_range = 0,
+  residual_phi = 0,
+  noise_share = 0
 )
 }
 \arguments{
@@ -37,6 +40,16 @@ every k-th variable, k = round(1 / counts), becomes Poisson with log-mean
 log(5) - 0.125 + 0.5 z, z the standardised latent variable (mean count about 5).
 The components, \code{R_true} and the classes stay on the latent scale, kept in
 \code{X_latent}; \code{count_vars} names the count variables.}
+
+\item{residual_range}{Range of an exponential spatial covariance of the residual
+fields, which are combined through \code{R_true} (0, the default: independent across sites).}
+
+\item{residual_phi}{AR(1) coefficient in time of those fields (0, the default:
+independent across times).}
+
+\item{noise_share}{Share of the variance of each residual component that is noise
+independent across variables and rows (0, the default). The correlation between the
+residual components is then \code{(1 - noise_share) * R_true} off the diagonal.}
 }
 \value{
 An object of class \code{depprep_sim} with \code{X}, \code{coords}, \code{time}, \code{index},
@@ -45,8 +58,10 @@ An object of class \code{depprep_sim} with \code{X}, \code{coords}, \code{time},
 \description{
 \code{n} sites in the unit square (or \code{coords}) observed at \code{n_times} regular times.
 Rows of \code{X} are ordered time by time (all sites at time 1, then all sites at
-time 2, ...); \code{index} gives the site and time of each row. The residual
-components have correlation \code{R_true} and are independent across rows.
+time 2, ...); \code{index} gives the site and time of each row. By default the residual
+components have correlation \code{R_true} and are independent across rows; with
+\code{residual_range}, \code{residual_phi} or \code{noise_share} the association is itself
+autocorrelated and each variable can have noise of its own.
 }
 \details{
 Regimes for \code{\link[=sim_group]{sim_group()}}:

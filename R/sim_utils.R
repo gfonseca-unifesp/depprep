@@ -151,6 +151,23 @@
   matrix(stats::rnorm(n_obs * ncol(R)), n_obs) %*% u
 }
 
+# Residual components whose association is itself autocorrelated: one independent field
+# per variable, exponential in space (range 0: independent across sites) and AR(1) in
+# time, combined through the Cholesky factor of R; then a share `noise` of independent
+# noise. Rows time by time, with unit variance.
+.residual_fields <- function(coords, n_times, R, range, phi, noise) {
+  n <- nrow(coords)
+  u <- tryCatch(chol(R), error = function(e) stop("`R_true` must be a positive definite correlation matrix.", call. = FALSE))
+  draw <- function() if (range > 0) .grf_chol(coords, range, n_sim = n_times) else matrix(stats::rnorm(n * n_times), n)
+  fields <- vapply(seq_len(ncol(R)), function(j) {
+    e <- draw()
+    z <- e[, 1]
+    for (t in seq_len(n_times)[-1]) { z <- phi * z + sqrt(1 - phi^2) * e[, t]; e[, t] <- z }
+    as.vector(e)
+  }, numeric(n * n_times))
+  sqrt(1 - noise) * (fields %*% u) + sqrt(noise) * matrix(stats::rnorm(n * n_times * ncol(R)), n * n_times)
+}
+
 # Contiguous classes: k spatial regions (k-means of the coordinates) or k blocks of
 # consecutive times.
 .contiguous_classes <- function(k, coords = NULL, n_times = NULL) {
@@ -328,10 +345,10 @@ make_R_true <- function(groups, type = c("identity", "blocks", "crossed"), withi
 }
 
 # Assemble X and the simulation object.
-.assemble <- function(family, groups, large, R_true, classes, seed, extra, call, counts = 0) {
+.assemble <- function(family, groups, large, R_true, classes, seed, extra, call, counts = 0, residual = NULL) {
   share <- rep(vapply(groups, `[[`, 0, "large_scale_share"), vapply(groups, `[[`, 0L, "n_vars"))
   n_obs <- nrow(large)
-  residual <- .with_stream(seed, .streams[["residual"]], .residual_mvn(n_obs, R_true))
+  if (is.null(residual)) residual <- .with_stream(seed, .streams[["residual"]], .residual_mvn(n_obs, R_true))
   x <- sweep(large, 2, sqrt(share), "*") + sweep(residual, 2, sqrt(1 - share), "*") + classes$effect
   vn <- attr(groups, "var_names")
   colnames(x) <- colnames(large) <- colnames(residual) <- colnames(classes$effect) <- vn

@@ -1,5 +1,12 @@
 # depprep 0.1.0
 
+## Simulation (stage 9, protocol-v1.3.1)
+
+* `sim_spatiotemporal()` gains `residual_range`, `residual_phi` and `noise_share`: the
+  association between the residual components can be autocorrelated in space and time,
+  and each variable can have noise of its own. With the defaults every output is the
+  same as before.
+
 ## Missing values (stage 9, decision D26)
 
 * Missing values (`NA`) in the data are accepted, without imputation: each variable

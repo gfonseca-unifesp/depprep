@@ -2,8 +2,10 @@
 #'
 #' `n` sites in the unit square (or `coords`) observed at `n_times` regular times.
 #' Rows of `X` are ordered time by time (all sites at time 1, then all sites at
-#' time 2, ...); `index` gives the site and time of each row. The residual
-#' components have correlation `R_true` and are independent across rows.
+#' time 2, ...); `index` gives the site and time of each row. By default the residual
+#' components have correlation `R_true` and are independent across rows; with
+#' `residual_range`, `residual_phi` or `noise_share` the association is itself
+#' autocorrelated and each variable can have noise of its own.
 #'
 #' Regimes for [sim_group()]:
 #' * `"separable_ar1"`: exponential spatial field evolving as AR(1) in time,
@@ -26,6 +28,13 @@
 #' @param n_times Number of time steps.
 #' @param classes Optional list as in [sim_spatial()]; contiguous classes are
 #'   spatial regions that keep their class at every time.
+#' @param residual_range Range of an exponential spatial covariance of the residual
+#'   fields, which are combined through `R_true` (0, the default: independent across sites).
+#' @param residual_phi AR(1) coefficient in time of those fields (0, the default:
+#'   independent across times).
+#' @param noise_share Share of the variance of each residual component that is noise
+#'   independent across variables and rows (0, the default). The correlation between the
+#'   residual components is then `(1 - noise_share) * R_true` off the diagonal.
 #' @return An object of class `depprep_sim` with `X`, `coords`, `time`, `index`,
 #'   `group`, `components`, `R_true`, `classes`, `groups` and `seed`.
 #' @examples
@@ -34,8 +43,10 @@
 #'                 sim_group("none", 2, "none"))
 #' sim_spatiotemporal(50, 60, g, seed = 1)
 #' @export
-sim_spatiotemporal <- function(n, n_times, groups, R_true = NULL, coords = NULL, classes = NULL, seed, counts = 0) {
-  stopifnot(inherits(groups, "depprep_groups"), !missing(seed), n_times >= 2)
+sim_spatiotemporal <- function(n, n_times, groups, R_true = NULL, coords = NULL, classes = NULL, seed, counts = 0,
+                               residual_range = 0, residual_phi = 0, noise_share = 0) {
+  stopifnot(inherits(groups, "depprep_groups"), !missing(seed), n_times >= 2, residual_range >= 0,
+            residual_phi >= 0, residual_phi < 1, noise_share >= 0, noise_share < 1)
   .check_regime(groups, c("separable_ar1", "separable_seasonal", "moving", "temporal_common", "none"))
   R_true <- .check_R(R_true, groups)
   if (is.null(coords)) {
@@ -87,6 +98,9 @@ sim_spatiotemporal <- function(n, n_times, groups, R_true = NULL, coords = NULL,
   large <- .large_by_variable(groups, fields, n_obs)
   cls <- .make_classes(classes, n_obs, ncol(large), seed, coords = coords, expand = n_times)
   index <- data.frame(site = rep(seq_len(n), times = n_times), time = rep(seq_len(n_times), each = n))
+  residual <- if (residual_range > 0 || residual_phi > 0 || noise_share > 0) {
+    .with_stream(seed, .streams[["residual"]], .residual_fields(coords, n_times, R_true, residual_range, residual_phi, noise_share))
+  }
   .assemble("spatiotemporal", groups, large, R_true, cls, seed,
-            list(coords = coords, time = seq_len(n_times), index = index), match.call(), counts = counts)
+            list(coords = coords, time = seq_len(n_times), index = index), match.call(), counts = counts, residual = residual)
 }

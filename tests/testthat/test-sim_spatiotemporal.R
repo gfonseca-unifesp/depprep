@@ -66,3 +66,26 @@ test_that("invalid regimes and missing parameters fail clearly", {
   expect_error(sim_spatiotemporal(10, 5, sim_groups(sim_group("a", 1, "ar1", phi = 0.5)), seed = 1), "not available")
   expect_error(sim_spatiotemporal(10, 5, sim_groups(sim_group("m", 1, "moving", range = 0.2)), seed = 1), "velocity")
 })
+
+test_that("the residual options give a known autocorrelation, association and noise, and change nothing by default", {
+  g <- sim_groups(sim_group("a", 2, "separable_ar1", range = 0.4, phi = 0.7), sim_group("none", 1, "none"))
+  R <- matrix(0.6, 3, 3); diag(R) <- 1
+  expect_identical(sim_spatiotemporal(30, 20, g, R_true = R, seed = 4)$X,
+                   sim_spatiotemporal(30, 20, g, R_true = R, seed = 4, residual_range = 0, residual_phi = 0, noise_share = 0)$X)
+  s <- sim_spatiotemporal(150, 200, g, R_true = R, seed = 5, residual_range = 0.2, residual_phi = 0.6, noise_share = 0.5)
+  E <- s$components$residual
+  expect_equal(unname(apply(E, 2, var)), rep(1, 3), tolerance = 0.1)
+  # the noise share attenuates the correlation of R_true: 0.6 * (1 - 0.5)
+  expect_equal(cor(E)[1, 2], 0.3, tolerance = 0.25)
+  cube <- matrix(E[, 1], 150)
+  # lag-one autocorrelation in time: 0.6 of the field share of the variance
+  expect_equal(mean(vapply(1:150, function(i) cor(cube[i, -1], cube[i, -200]), 0)), 0.3, tolerance = 0.2)
+  # neighbouring sites share the field, distant ones do not
+  d <- as.matrix(dist(s$coords)); near <- which(d > 0 & d < 0.03, arr.ind = TRUE); far <- which(d > 0.8, arr.ind = TRUE)
+  rho <- function(w) mean(rowMeans(cube[w[, 1], ] * cube[w[, 2], ]))
+  expect_gt(rho(near), 0.3)
+  expect_lt(abs(rho(far)), 0.1)
+  sn <- sim_spatiotemporal(30, 20, g, seed = 6, noise_share = 0.5)
+  expect_equal(dim(sn$components$residual), c(600L, 3L))
+  expect_error(sim_spatiotemporal(30, 20, g, seed = 6, noise_share = 1))
+})
