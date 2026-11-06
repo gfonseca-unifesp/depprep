@@ -9,6 +9,8 @@
 # conditional with the groups and the union basis; conditional + AR (the residuals of the
 # conditional mode, then an AR filter of each site with the coefficients of the group).
 # Truth: the sample correlation of the residual components.
+# The diagnosis uses 499 permutations, as in 09d: in space-time the spatial p-value is the
+# smallest over 6 time slices times 6, so with 99 it could never fall below 0.05.
 #
 # Usage: Rscript analysis/09f_r_mode_simulation.R          every replicate, resumable
 #        Rscript analysis/09f_r_mode_simulation.R pilot    one replicate of two cells, timed
@@ -100,8 +102,9 @@ one_replicate <- function(k, r) {
   class(oracle) <- c("depprep_grouping", "data.frame")
   attr(oracle, "period") <- tapply(tt$true_period, true_group, function(x) x[1])
   t0 <- Sys.time()
-  estimated <- group_regimes(diagnose_variables(s, nsim = 99, perm_seed = seed), seed = seed)
+  estimated <- group_regimes(diagnose_variables(s, nsim = 499, perm_seed = seed), seed = seed)
   time_grouping <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  types_match <- mean(estimated$type == oracle$group_type)
   rows <- list()
   for (grouping in c("true", "estimated")) {
     gr <- if (grouping == "true") oracle else estimated
@@ -120,7 +123,7 @@ one_replicate <- function(k, r) {
       rows[[paste(grouping, m)]] <- cbind(cell[rep(1, 1), ], replicate = r, seed = seed, grouping = grouping, mode = m,
                                           measures(est[[m]], truth, true_group), first_axis_share = first,
                                           first_above_broken_stick = first > sum(1 / seq_len(ncol(truth))) / ncol(truth),
-                                          seconds = seconds[[m]], seconds_grouping = time_grouping)
+                                          seconds = seconds[[m]], seconds_grouping = time_grouping, types_match = types_match)
     }
   }
   out <- do.call(rbind, rows); rownames(out) <- NULL
@@ -158,7 +161,7 @@ stopCluster(cl)
 all_rows <- do.call(rbind, res)
 utils::write.csv(all_rows, file.path("results", "r_mode_simulation.csv"), row.names = FALSE)
 
-summ <- aggregate(cbind(rms, mean_abs_true, mean_abs_r, sign_kept, first_above_broken_stick, seconds) ~
+summ <- aggregate(cbind(rms, mean_abs_true, mean_abs_r, sign_kept, first_above_broken_stick, seconds, types_match) ~
                     association + noise_share + truth + grouping + mode + class,
                   data = all_rows, FUN = mean, na.rm = TRUE, na.action = stats::na.pass)
 utils::write.csv(summ, file.path("results", "r_mode_summary.csv"), row.names = FALSE)
