@@ -26,7 +26,7 @@
 # large-scale component in the truth) and the distance to the basis of the
 # complete data (basis_distance()); the error of R against the correlation of the true
 # signal and its distance to the R of the complete data (RMS over the pairs); the share
-# of the regime types (classify_regime() on diagnose_variables(nsim = 99)) equal to those
+# of the regime types (classify_regime() on diagnose_variables(nsim = 199)) equal to those
 # of the complete data; and the k-means ARI on the rows of X where every variable has a
 # value (NA with fewer than 30 such rows), with the number of those rows.
 # Seeds: 16400 + 1000 * combination + replicate for the data; for the gaps, the same plus
@@ -82,7 +82,7 @@ one_check <- function(k, r) {
   share <- truth_table(s$groups)$share
   signal <- latent - sweep(s$components$large, 2, sqrt(share), "*")
   R_sig <- suppressWarnings(stats::cor(signal)); ut <- upper.tri(R_sig)
-  types0 <- classify_regime(do.call(diagnose_variables, c(list(s$X, nsim = 99), pos)))
+  types0 <- classify_regime(do.call(diagnose_variables, c(list(s$X, nsim = 199), pos)))
   ref <- correct(s, gr, seed = seed)
   cases <- c(list(list(kind = "complete", f = 0, X = s$X, gaps_seed = NA)),
              unlist(lapply(kinds, function(kd) lapply(shares, function(f) {
@@ -103,7 +103,7 @@ one_check <- function(k, r) {
       data.frame(kn = ncol(vb[[v]]) / nrow(s$X), capture = if (has_large) ca[["capture"]] else NA_real_, absorption = ca[["absorption"]],
                  distance_to_complete = basis_distance(vb[[v]], ref$variable_bases[[v]]))
     }))
-    types <- if (cs$kind == "complete") types0 else classify_regime(do.call(diagnose_variables, c(list(cs$X, nsim = 99), pos)))
+    types <- if (cs$kind == "complete") types0 else classify_regime(do.call(diagnose_variables, c(list(cs$X, nsim = 199), pos)))
     whole <- stats::complete.cases(cr$X)
     km <- if (is.null(s$classes) || sum(whole) < 30) NA_real_ else {
       d <- run_downstream(cr$X[whole, , drop = FALSE], "kmeans",
