@@ -1,5 +1,15 @@
 # depprep 0.1.0
 
+## Default of R in space-time (stage 9, decision D29)
+
+* `correct()` gains the mode `"conditional_ar"`, for space-time data: the residuals of the
+  conditional mode, pair by pair, then an AR filter of each site with the coefficients of
+  each group. It is the new default of `R` in space-time, in the package and in the app;
+  `mode = "whiten"` gives the previous default. The data matrix `X` does not change.
+* `diagnose_variables()` warns when `nsim` is too low for space-time data, where the
+  spatial p-value is the smallest of 6 time slices times 6: below 120 permutations no
+  variable can show spatial dependence.
+
 ## Simulation (stage 9, protocol-v1.3.1)
 
 * `sim_spatiotemporal()` gains `residual_range`, `residual_phi` and `noise_share`: the

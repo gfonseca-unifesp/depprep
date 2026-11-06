@@ -177,7 +177,7 @@ variable uses the rows where it was observed (decision D26).
 | --- | --- |
 | Diagnosis (`diagnose_variables()`) | In space, the statistics use the sites where the variable was observed (the nearest neighbours among them). In time, the series keeps its time steps with the gaps in place: the trend, the cycle and the periodogram are fitted on the observed times, and the autocorrelation and the AR fit skip the missing ones. In space-time, the time slices and the sites summarised are those with at least half of their values observed |
 | Basis (`build_group_basis()`) | The terms of a group are selected with each missing value counting as the variable's mean, so it adds nothing to what a candidate explains, and a variable with many gaps weighs less in the group. The selected terms are defined at every row |
-| Correction (`correct()`) | Each variable is regressed on its group's basis (and the constant) over its own observed rows. In the whitening mode, each time is whitened at its observed sites, and the AR filter gives a missing value where the value or one of its lags is missing. The corrected data keep the missing values in place; the correlations of `R` are computed on the rows where both variables have a value |
+| Correction (`correct()`) | Each variable is regressed on its group's basis (and the constant) over its own observed rows. In the whitening mode, each time is whitened at its observed sites. In the modes with an AR filter, the filter gives a missing value where the value or one of its lags is missing. The corrected data keep the missing values in place; the correlations of `R` are computed on the rows where both variables have a value |
 | Verification (`verify()`) | Each variable is described on its observed rows: the autocorrelation, the Moran correlograms and the local Moran's I at its observed sites (in space-time, the site means over the observed times), and the Ljung-Box test with the gaps in place. The covariances behind the Q3 warning use the rows where both variables have a value; the Mantel correlogram uses the rows where every variable has a value |
 | Variation partition (`variation_partition()`) | Each variable on its observed rows |
 | App (`run_app()`) | Empty cells are accepted. Step 1 notes the share of missing values and the variables that have them. The previews of the techniques (PCA, k-means) use only the rows where every variable has a value, raw and corrected, and the periodogram plot is left out for a series with gaps (its period is in the table of the diagnosis) |
@@ -247,7 +247,7 @@ crt <- correct(Xt, group_regimes(diagnose_variables(Xt, time = series$time)), ti
 | 1. Data | Load a CSV with one row per observation and mark the position columns (x and y, time, site); choose spatial, temporal or space-time | A check of the columns and the first rows |
 | 2. Context | Say which technique the data are for (PCA, or MDS, k-means, SOM and HDBSCAN) and whether the classes you seek could be regions or periods | Which corrected matrix the technique reads, and a warning when correcting would remove the classes you are looking for |
 | 3. Diagnosis | Look at each variable's dependence and its plots (variogram, ACF, periodogram); change a regime by hand, or build the menu of structures of a group (trend, cycle with its period, Moran maps with a chosen graph, directional maps) | The groups of variables that will share a basis |
-| 4. Correction | Accept the default (the data matrix with one basis per variable, the correlation matrix with the shared basis) or choose another mode (conditional, whitening) and other bases for the correlation matrix | The bases used, with their size (k, k/n) and first terms |
+| 4. Correction | Accept the default (the data matrix with one basis per variable, the correlation matrix with the shared basis) or choose another mode (conditional, conditional + AR, whitening) and other bases for the correlation matrix | The bases used, with their size (k, k/n) and first terms |
 | 5. Verification | Check what was removed and what was kept | The autocorrelation of each variable before and after, the change in the correlations, the warning of signal at the scale of the basis, and a preview of the technique (PCA or k-means) before and after |
 | 6. Export | Download the results | The corrected data (CSV), the corrected correlation matrix (CSV), the HTML report of `report_correction()` and the R code |
 
@@ -406,7 +406,10 @@ Run from any folder; `RSCRIPT` sets the R to use. Each step writes its log to
 | **9. Real data: the Foz do Amazonas ocean** (in progress)<br>`R/partition.R` | 09a | `09a_fza_ocean_cube.R` | The ocean cube (cell x month) and the drivers; resumes from the files present | 01a | Earthdata, NOAA ERDDAP, ANA, NOAA PSL | hours (downloads), minutes (cached) |
 | | 09b | `09b_fza_gap_census.R` | Census of the gaps of the cube | 01a 01b 09a | — | minutes |
 | | 09c | `09c_missing_check.R` | What gaps cost the correction: 10% to 30% missing, at random and in cloud-like patches | — | — | 1-2 h |
-| | 09d | `09d_fza_ocean_analysis.R` | The ocean case of protocol-v1.3: five runs and the output methods, raw against corrected (resumable) | 09a | — | 2-3 h |
+| | 09d | `09d_fza_ocean_analysis.R` | The ocean case of protocol-v1.3: six runs and the output methods, raw against corrected (resumable) | 09a | — | 2-3 h |
+| | 09e | `09e_whitening_decomposition.R` | Where the associations of the ocean case live, and which step of the whitening removes them | 09d | — | 1 min |
+| | 09f | `09f_r_mode_simulation.R` | Which mode best estimates R in space-time when the association is autocorrelated and sensors have their own noise (resumable) | — | — | 2.5 h |
+| | 09g | `09g_fza_design_effect.R` | The same flow on the shelf and on the slope, to measure the effect of the extent of the grid | 09d | — | 1 h |
 
 Notes:
 
@@ -550,7 +553,8 @@ run_app()                                  # the same workflow, point and click
 Defaults, chosen from the simulation studies:
 
 - **The correlation matrix `R`** (for PCA): in space and in time, one global basis of the
-  dependent variables, conditional mode; in space-time, whitening group by group.
+  dependent variables, conditional mode; in space-time, the conditional mode group by
+  group, followed by an AR filter of each site (`"conditional_ar"`).
 - **The data matrix `X`** (for MDS, k-means, SOM, HDBSCAN): each variable corrected with
   a basis selected on that variable alone (`data_basis = "own"`). A shared basis takes
   part of every variable's class signal away; a basis per variable keeps the classes.
@@ -632,15 +636,18 @@ When the warning fires, the correlations are not wrong: much of the association 
 the scale of the basis. If the classes you seek are regions or periods, analyse the raw
 data, or use clustering constrained by contiguity (section 5).
 
-`correct()` has three modes: `"conditional"` (residuals on the group bases),
+`correct()` has four modes: `"conditional"` (residuals on the group bases),
+`"conditional_ar"` (space-time: those residuals, then an AR filter of each site, for `R`),
 `"whiten"` (the observations are whitened with each group's estimated covariance) and
 `"scale"` (one correlation matrix per band of scales). What the simulations show so far:
 the error of using different bases for two variables is real but small (of order
 rho k/n); the larger error is the part of a shared large-scale process that no basis
 captures, which grows with the roughness of that process. A correction cannot always
 remove it: at scales finer than the basis, a shared process and a genuine association
-leave the same trace. In space-time, observation over time separates them better, and
-whitening reduces the error substantially.
+leave the same trace. In space-time, observation over time separates them better. When
+the association between variables is itself autocorrelated and each variable has noise
+of its own, as with satellite products, whitening removes much of the association and
+the conditional mode inflates it; `"conditional_ar"` erred least, so it is the default.
 
 ### The basis is feature engineering: three rules for your own features
 
