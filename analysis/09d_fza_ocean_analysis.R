@@ -15,6 +15,9 @@
 #   fraction_0.5  fraction 0.5,  no drivers, R by D7
 #   conditional   fraction 0.25, no drivers, R in the conditional mode on the group bases
 #                 of the main run (only its R is used; it is the Q3 fit of the main run)
+#   conditional_ar fraction 0.25, no drivers, R in the conditional + AR mode, the default
+#                 chosen in D29 after the run of the amendment (protocol-v1.3.1, 17.4; only
+#                 its R is used, since the data matrix does not depend on the mode)
 # The data matrix X is always corrected with one basis per variable (D17).
 #
 # Output methods (sections 16.7 and 16.8):
@@ -79,9 +82,9 @@ prefix <- if (subset_sites > 0) "ocean_subset_" else if (nzchar(region)) paste0(
 out_file <- function(name) file.path(out_dir, paste0(prefix, name))
 Sys.setenv(RENV_CONFIG_SANDBOX_ENABLED = "FALSE")      # socket workers of correct(cores =)
 
-runs <- data.frame(run = c("main", "drivers", "fraction_0", "fraction_0.5", "conditional"),
-                   min_fraction = c(0.25, 0.25, 0, 0.5, 0.25), drivers = c(FALSE, TRUE, FALSE, FALSE, FALSE),
-                   r_mode = c("whiten", "whiten", "whiten", "whiten", "conditional"), stringsAsFactors = FALSE)
+runs <- data.frame(run = c("main", "drivers", "fraction_0", "fraction_0.5", "conditional", "conditional_ar"),
+                   min_fraction = c(0.25, 0.25, 0, 0.5, 0.25, 0.25), drivers = c(FALSE, TRUE, FALSE, FALSE, FALSE, FALSE),
+                   r_mode = c("whiten", "whiten", "whiten", "whiten", "conditional", "conditional_ar"), stringsAsFactors = FALSE)
 
 # --- Data ------------------------------------------------------------------------------
 cube <- read.csv(file.path(out_dir, "ocean_cube.csv"), stringsAsFactors = FALSE)
@@ -92,7 +95,7 @@ depth <- tapply(topo$altitude, paste(floor(topo$lon / 0.25), floor(topo$lat / 0.
 cells$region <- ifelse(as.vector(depth[paste(floor(cells$lon / 0.25), floor(cells$lat / 0.25))]) > -200, "shelf", "slope and deep")
 if (nzchar(region)) {
   cells <- cells[cells$region == region, ]
-  runs <- runs[runs$run %in% c("main", "conditional"), ]
+  runs <- runs[runs$run %in% c("main", "conditional", "conditional_ar"), ]
 }
 if (subset_sites > 0) {
   d <- sqrt((cells$lon - mean(cells$lon))^2 + (cells$lat - mean(cells$lat))^2)
@@ -262,9 +265,10 @@ for (i in seq_len(nrow(runs))) {
   }
   t0 <- Sys.time()
   cr <- if (r$r_mode == "conditional") q3_fits$main else
-    correct(X, gr, coords = coords, index = index, seed = seed, cores = params$cores,
+    correct(X, gr, coords = coords, index = index, mode = r$r_mode, data_basis = if (r$r_mode == "whiten") "own" else "union", seed = seed, cores = params$cores,
             covariates = if (r$drivers) covariates else NULL)
   time_correct <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  if (r$r_mode == "conditional_ar") stopifnot(isTRUE(all.equal(cr$kn, results$main$kn)))   # the same group bases
   vf <- NULL
   if (r$run %in% c("main", "drivers")) {
     t1 <- Sys.time()
@@ -325,7 +329,7 @@ for (i in seq_len(nrow(runs))) {
     pair_rows[[r$run]]$predicted_sign[j] <- s0
     pair_rows[[r$run]]$prediction_holds[j] <- sign(rc[j]) == s0 && abs(rc[j]) >= params$delta_r
   }
-  if (r$run == "conditional") next                         # only its R is used
+  if (r$r_mode %in% c("conditional", "conditional_ar")) next   # only its R is used
   # techniques on observations
   Xc <- cr$X[, params$variables]
   whole <- which(stats::complete.cases(X) & stats::complete.cases(Xc))
@@ -403,7 +407,7 @@ w(partition, "partition.csv"); w(do.call(rbind, lisa_rows), "lisa.csv"); w(do.ca
 
 # --- Figures ---------------------------------------------------------------------------
 modal_all <- do.call(rbind, modal_rows)
-for (run in setdiff(runs$run, "conditional")) {
+for (run in setdiff(runs$run, c("conditional", "conditional_ar"))) {
   grDevices::png(out_file(paste0("classes_", run, ".png")), width = 2400, height = 1800, res = 200)
   graphics::par(mfrow = c(2, 4), mar = c(2, 2, 2.5, 0.5))
   for (m in c("kmeans", "som")) for (h in c("January-June", "July-December")) for (d in c("raw", "corrected")) {

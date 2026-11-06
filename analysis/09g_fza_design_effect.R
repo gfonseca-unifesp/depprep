@@ -4,7 +4,8 @@
 # Designs, with cells of 0.25 degrees and valid fraction 0.25: the whole basin (the main and
 # conditional runs of analysis/09d, reused), the shelf (depth above 200 m) and the slope and
 # deep water. Each part goes through the flow of 09d again, with a new diagnosis and grouping,
-# for R with whitening and with the conditional mode. A pair depends on the design when
+# for R with whitening, with the conditional mode and with conditional + AR, the default
+# chosen in D29 (run analysis/09d first). A pair depends on the design when
 # |r(design) - r(whole basin)| >= 0.2 under the same mode.
 #
 # Seed 17500, as in 09d, which records it in its session files.
@@ -26,7 +27,7 @@ Sys.unsetenv("DEPPREP_OCEAN_REGION")
 designs <- c(whole = "ocean_", shelf = "ocean_shelf_", slope = "ocean_slope_")
 read_all <- function(name) do.call(rbind, lapply(names(designs), function(d) {
   x <- utils::read.csv(file.path(out_dir, paste0(designs[[d]], name, ".csv")), stringsAsFactors = FALSE)
-  x <- x[x$run %in% c("main", "conditional"), ]
+  x <- x[x$run %in% c("main", "conditional", "conditional_ar"), ]
   cbind(design = d, x)
 }))
 pairs <- read_all("pairs")
@@ -45,7 +46,7 @@ first_axis <- pca[pca$axis == 1, ]
 classes <- read_all("classes")
 kmeans_rows <- classes[classes$method == "kmeans", ]
 at <- function(x, d, r, col) { v <- x[[col]][x$design == d & x$run == r]; if (length(v)) v[1] else NA }
-summary_rows <- do.call(rbind, lapply(names(designs), function(d) do.call(rbind, lapply(c("main", "conditional"), function(r) {
+summary_rows <- do.call(rbind, lapply(names(designs), function(d) do.call(rbind, lapply(c("main", "conditional", "conditional_ar"), function(r) {
   p <- pairs[pairs$design == d & pairs$run == r, ]
   data.frame(design = d, run = r, cells = at(run_rows, d, r, "rows") / 93, q3 = at(run_rows, d, "main", "q3_statistic"),
              pairs_change_raw_corrected = sum(p$changes), pairs_depend_on_design = sum(p$depends_on_design),
