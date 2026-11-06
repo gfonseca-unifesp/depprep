@@ -442,7 +442,7 @@ run_app <- function(launch.browser = interactive()) {
 }
 
 # The R code that reproduces what was done in the app.
-.app_code <- function(file, family, x, y, time, site, variables, overrides, menus, mode, scope) {
+.app_code <- function(file, family, x, y, time, site, variables, overrides, menus, mode, scope, other = NULL) {
   q <- function(v) encodeString(v, quote = "\"")
   vec <- function(v) paste0("c(", paste(q(v), collapse = ", "), ")")
   pos <- switch(family, spatial = "coords = coords", temporal = "time = time", spatiotemporal = "coords = coords, index = index")
@@ -467,9 +467,12 @@ run_app <- function(launch.browser = interactive()) {
     if (length(overrides)) c("# regimes changed by hand", unlist(lapply(overrides, override))),
     if (length(menus)) c("menus <- list(", paste0("  ", names(menus), " = ", vapply(menus, function(m) .menu_code(m), ""), collapse = ",\n"), ")"),
     sprintf("cr <- correct(X, grouping, %s, mode = %s, scope = %s%s)", pos, q(mode), q(scope), if (length(menus)) ", menu = menus" else ""),
+    if (!is.null(other)) sprintf("other <- correct(X, grouping, %s, mode = %s, scope = %s, data_basis = \"union\"%s%s)", pos, q(other$mode), q(other$scope),
+                                 if (other$scope == scope) ", bases = cr$bases" else "", if (length(menus)) ", menu = menus" else ""),
     sprintf("v <- verify(cr, X, %s)", pos),
     "write.csv(cr$X, \"corrected_data.csv\", row.names = FALSE)",
     "write.csv(cr$R, \"corrected_R.csv\")",
+    if (!is.null(other)) "write.csv(other$R, \"corrected_R_other_mode.csv\")",
     "write.csv(diagnosis_table(sig, grouping), \"diagnosis.csv\", row.names = FALSE)",
     sprintf("report_correction(cr, X, v, file = \"depprep_report.html\", signature = sig, grouping = grouping, %s)", pos))
 }
@@ -507,6 +510,31 @@ run_app <- function(launch.browser = interactive()) {
   "comes with a change in chlorophyll, so slow associations fade. Both are legitimate, and they can differ.")
 .question_mode <- function(question, family) {
   if (question == "innovations") "whiten" else if (family == "spatiotemporal") "conditional_ar" else "conditional"
+}
+
+.default_scope <- function(mode, family, menus = NULL) {
+  if (mode != "whiten" && family != "spatiotemporal" && !length(menus)) "global" else "groups"
+}
+
+# The other answer to the question of step 2: whitening against the default of the family.
+.other_mode <- function(mode, family) if (mode == "whiten") .question_mode("association", family) else "whiten"
+
+# R by the other mode. Only R is used, since X does not depend on the mode (D17), and the
+# bases already built are reused when both modes share the scope.
+.run_other_mode <- function(first, X, grouping, pos, family, menus = NULL, cores = 1L) {
+  mode <- .other_mode(first$mode, family)
+  scope <- .default_scope(mode, family, menus)
+  do.call(correct, c(list(X, grouping, mode = mode, scope = scope, data_basis = "union", cores = cores,
+                          bases = if (scope == first$scope) first$bases, menu = if (length(menus)) menus), pos))
+}
+
+# The pairs whose correlation differs by `threshold` or more between two matrices, largest first.
+.mode_disagreement <- function(R1, R2, threshold = 0.2) {
+  low <- which(lower.tri(R1), arr.ind = TRUE)
+  d <- data.frame(a = rownames(R1)[low[, 2]], b = rownames(R1)[low[, 1]], first = R1[low], second = R2[low], stringsAsFactors = FALSE)
+  d$difference <- d$second - d$first
+  d <- d[abs(d$difference) >= threshold, ]
+  structure(d[order(-abs(d$difference)), ], row.names = NULL, n_pairs = nrow(low))
 }
 
 # --- User interface -------------------------------------------------------------------
@@ -560,9 +588,12 @@ run_app <- function(launch.browser = interactive()) {
         shiny::selectInput("scope", "Bases for R", c("Default for the data" = "default", "One per group" = "groups", "One global basis" = "global",
                                                   "Union of the variables' bases" = "variables")),
         shiny::uiOutput("cores_ui"),
+        shiny::checkboxInput("both_modes", "Also run the other answer to the question of step 2 and show where the two disagree"),
         shiny::actionButton("correct", "Correct"),
         shiny::tableOutput("bases"),
-        shiny::uiOutput("correct_msg")),
+        shiny::uiOutput("correct_msg"),
+        shiny::uiOutput("modes_msg"),
+        shiny::tableOutput("modes_table")),
       shiny::tabPanel("5. Verification",
         shiny::wellPanel(shiny::strong("Figures (on screen and in the downloads)"),
           shiny::fluidRow(
@@ -574,6 +605,7 @@ run_app <- function(launch.browser = interactive()) {
             shiny::column(2, shiny::numericInput("fig_dpi", "Resolution (dpi, PNG and TIFF)", 300, min = 72, max = 1200, step = 50)))),
         shiny::actionButton("verify", "Verify"),
         shiny::uiOutput("q3_msg"),
+        shiny::uiOutput("modes_msg5"),
         shiny::h4("Each variable before and after the correction"),
         shiny::p(class = "help", "Variance removed, autocorrelation, and the tests of structure on the raw data and on the corrected data: the Moran correlogram (Bonferroni over distance classes) and the share of sites with local structure (LISA, FDR) in space, the Ljung-Box test in time."),
         shiny::div(style = "overflow-x:auto", shiny::tableOutput("before_after")),
@@ -594,6 +626,7 @@ run_app <- function(launch.browser = interactive()) {
         shiny::downloadButton("dl_code", "R code"),
         shiny::downloadButton("dl_diag6", "Diagnosis before the correction (CSV)"),
         shiny::downloadButton("dl_lisa", "Local Moran's I before and after (CSV, space)"),
+        shiny::uiOutput("dl_modes_ui"),
         shiny::hr(),
         shiny::p(class = "help", "Limits: with missing values, the previews of the techniques on observations use only the rows where every variable has a value; project coordinates in degrees beyond about 11 degrees of latitude; filters such as SAR/CAR or STAR are not in the menu."))))
 }
@@ -774,7 +807,7 @@ run_app <- function(launch.browser = interactive()) {
   settings <- shiny::reactive({
     d <- dat()
     mode <- if (input$mode == "default") .question_mode(input$question, d$family) else input$mode
-    scope <- if (input$scope == "default") (if (mode != "whiten" && d$family != "spatiotemporal" && !length(rv$menus)) "global" else "groups") else input$scope
+    scope <- if (input$scope == "default") .default_scope(mode, d$family, rv$menus) else input$scope
     list(mode = mode, scope = scope)
   })
   # several processes pay off only on large data (each takes seconds to start on Windows)
@@ -785,16 +818,40 @@ run_app <- function(launch.browser = interactive()) {
   })
   output$correct_help <- shiny::renderUI(shiny::p(class = "help",
     "Default: in space and in time, R from one global basis of the dependent variables, conditional mode; in space-time, conditional + AR by group. The data matrix X always has each variable corrected with its own basis, which keeps the classes. With a menu, the bases are built per group."))
+  shiny::observeEvent(input$question, shiny::updateCheckboxInput(session, "both_modes", value = input$question == "unsure"))
   shiny::observeEvent(input$correct, {
     shiny::req(rv$grouping)
     d <- dat(); st <- settings()
+    cores <- if (is.numeric(input$cores) && input$cores >= 1) input$cores else 1L
     shiny::withProgress(message = "Correcting", {
-      rv$cr <- tryCatch(do.call(correct, c(list(d$X, rv$grouping, mode = st$mode, scope = st$scope, menu = if (length(rv$menus)) rv$menus,
-                                                cores = if (is.numeric(input$cores) && input$cores >= 1) input$cores else 1L),
+      rv$cr <- tryCatch(do.call(correct, c(list(d$X, rv$grouping, mode = st$mode, scope = st$scope, menu = if (length(rv$menus)) rv$menus, cores = cores),
                                            pos_args(d))), error = function(e) e)
-      rv$v <- NULL
+      rv$v <- NULL; rv$other <- NULL
+      if (isTRUE(input$both_modes) && !inherits(rv$cr, "error")) {
+        rv$other <- tryCatch(.run_other_mode(rv$cr, d$X, rv$grouping, pos_args(d), d$family, rv$menus, cores), error = function(e) e)
+      }
     })
   })
+  disagreement <- shiny::reactive({
+    shiny::req(rv$cr, rv$other, !inherits(rv$cr, "error"), !inherits(rv$other, "error"))
+    .mode_disagreement(rv$cr$R, rv$other$R)
+  })
+  modes_note <- function() {
+    if (inherits(rv$other, "error")) return(shiny::div(class = "note", paste("The other mode failed:", conditionMessage(rv$other))))
+    p <- disagreement()
+    if (!nrow(p)) return(shiny::div(class = "ok", sprintf("Modes %s and %s agree: no pair differs by 0.2 or more.", rv$cr$mode, rv$other$mode)))
+    shiny::div(class = "note", sprintf("Modes %s and %s disagree on %d of %d pairs (difference of 0.2 or more). Those pairs depend on the question of step 2: report the mode you used and do not read them as settled.",
+                                       rv$cr$mode, rv$other$mode, nrow(p), attr(p, "n_pairs")))
+  }
+  output$modes_msg <- shiny::renderUI({ shiny::req(rv$other); modes_note() })
+  output$modes_msg5 <- shiny::renderUI({ shiny::req(rv$v, rv$other); modes_note() })
+  output$modes_table <- shiny::renderTable({
+    p <- disagreement(); shiny::req(nrow(p))
+    names(p)[3:4] <- c(rv$cr$mode, rv$other$mode)
+    p
+  }, digits = 3)
+  output$dl_modes_ui <- shiny::renderUI({ shiny::req(rv$other, !inherits(rv$other, "error")); shiny::downloadButton("dl_modes", "Pairs on which the two modes disagree (CSV)") })
+  output$dl_modes <- shiny::downloadHandler("modes_disagreement.csv", function(f) utils::write.csv(disagreement(), f, row.names = FALSE))
   output$bases <- shiny::renderTable({
     shiny::req(rv$cr, !inherits(rv$cr, "error"))
     b <- rv$cr$bases
@@ -872,7 +929,7 @@ run_app <- function(launch.browser = interactive()) {
     d <- dat(); st <- settings()
     .app_code(rv$file, d$family, if (d$family != "temporal") input$x, if (d$family != "temporal") input$y,
               if (d$family != "spatial") input$time, if (d$family == "spatiotemporal") input$site, colnames(d$X),
-              rv$overrides, rv$menus, st$mode, st$scope)
+              rv$overrides, rv$menus, st$mode, st$scope, if (!is.null(rv$other) && !inherits(rv$other, "error")) list(mode = rv$other$mode, scope = rv$other$scope))
   })
   output$dl_code <- shiny::downloadHandler("depprep_analysis.R", function(f) writeLines(code_text(), f))
   invisible(rv)

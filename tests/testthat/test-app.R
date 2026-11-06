@@ -149,6 +149,10 @@ test_that("the R code of the app parses and reproduces the correction", {
                               list(g1 = basis_menu(term_trend())), "conditional", "groups")
   expect_silent(parse(text = code))
   expect_true(any(grepl("menu = menus", code)))
+  both <- depprep:::.app_code("data.csv", "spatiotemporal", "x", "y", "t", "s", c("a", "b"), list(), list(), "conditional_ar", "groups",
+                              list(mode = "whiten", scope = "groups"))
+  expect_silent(parse(text = both))
+  expect_true(any(grepl("mode = \"whiten\", scope = \"groups\", data_basis = \"union\", bases = cr$bases", both, fixed = TRUE)))
   expect_true(any(grepl("grouping$group[i] <- \"none\"", code, fixed = TRUE)))
   skip_on_cran()
   dir <- tempfile(); dir.create(dir); dir <- normalizePath(dir, winslash = "/")
@@ -174,6 +178,46 @@ test_that("the question of step 2 gives the mode of each family", {
     expect_identical(depprep:::.question_mode(q, "spatiotemporal"), "conditional_ar")
   }
   for (fam in c("spatial", "temporal", "spatiotemporal")) expect_identical(depprep:::.question_mode("innovations", fam), "whiten")
+})
+
+test_that("the two modes of the app are compared pair by pair", {
+  R1 <- diag(3); dimnames(R1) <- list(c("a", "b", "c"), c("a", "b", "c"))
+  R2 <- R1
+  R1["a", "b"] <- R1["b", "a"] <- 0.1; R2["a", "b"] <- R2["b", "a"] <- 0.25
+  R1["a", "c"] <- R1["c", "a"] <- -0.5; R2["a", "c"] <- R2["c", "a"] <- 0.1
+  R1["b", "c"] <- R1["c", "b"] <- 0.3; R2["b", "c"] <- R2["c", "b"] <- 0.5
+  p <- depprep:::.mode_disagreement(R1, R2)
+  expect_identical(p$a, c("a", "b"))
+  expect_identical(p$b, c("c", "c"))
+  expect_equal(p$difference, c(0.6, 0.2))
+  expect_identical(attr(p, "n_pairs"), 3L)
+  expect_identical(nrow(depprep:::.mode_disagreement(R1, R1)), 0L)
+  expect_identical(depprep:::.other_mode("whiten", "spatiotemporal"), "conditional_ar")
+  expect_identical(depprep:::.other_mode("conditional_ar", "spatiotemporal"), "whiten")
+  expect_identical(depprep:::.other_mode("whiten", "temporal"), "conditional")
+  expect_identical(depprep:::.default_scope("conditional", "spatial"), "global")
+  expect_identical(depprep:::.default_scope("conditional", "spatial", list(g1 = 1)), "groups")
+  expect_identical(depprep:::.default_scope("whiten", "spatial"), "groups")
+  expect_identical(depprep:::.default_scope("conditional_ar", "spatiotemporal"), "groups")
+})
+
+test_that("the other mode gives the R of a correction run alone, with the bases reused in space-time", {
+  skip_on_cran()
+  g <- sim_groups(sim_group("sep", 3, "separable_ar1", range = 0.5, phi = 0.9), sim_group("none", 2, "none"))
+  s <- sim_spatiotemporal(30, 40, g, seed = 8)
+  gr <- data.frame(variable = colnames(s$X), group = rep(c("g1", "none"), c(3, 2)), group_type = rep(c("separable_ar1", "none"), c(3, 2)))
+  pos <- list(coords = s$coords, index = s$index)
+  first <- correct(s$X, gr, coords = s$coords, index = s$index, scope = "groups", seed = 1)
+  other <- depprep:::.run_other_mode(first, s$X, gr, pos, "spatiotemporal")
+  expect_identical(other$mode, "whiten")
+  expect_equal(other$R, correct(s$X, gr, coords = s$coords, index = s$index, mode = "whiten", scope = "groups", seed = 1)$R)
+  # a spatial pair of modes has different scopes, so the whitening builds its own bases
+  d <- depprep:::.app_data(depprep:::.app_example(), "spatial", x = "x", y = "y")
+  grs <- group_regimes(diagnose_variables(d$X, coords = d$coords, nsim = 0))
+  f <- correct(d$X, grs, coords = d$coords, seed = 1)
+  o <- depprep:::.run_other_mode(f, d$X, grs, list(coords = d$coords), "spatial")
+  expect_identical(o$scope, "groups")
+  expect_identical(o$mode, "whiten")
 })
 
 test_that("the app server loads the example and builds the data", {
