@@ -17,6 +17,6 @@ correct_reference_cases <- function(...) {
                             kn = cr$kn, union_kn = cr$union_kn, warnings = cr$warnings)
   list(temporal_conditional = keep(correct(st, grt, ...)),
        temporal_whiten = keep(correct(st, grt, mode = "whiten", ...)),
-       st_whiten = keep(correct(ss, grs, ...)),
+       st_whiten = keep(correct(ss, grs, mode = "whiten", ...)),
        st_conditional = keep(correct(ss, grs, mode = "conditional", data_basis = "union", ...)))
 }

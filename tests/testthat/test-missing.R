@@ -139,11 +139,15 @@ test_that("the whitening mode accepts missing values in every family", {
   X[sample.int(nrow(X), 100), 1] <- NA
   X[ss$index$time == 4, 2] <- NA
   gr <- group_regimes(diagnose_variables(ss$X, coords = ss$coords, index = ss$index, nsim = 0), method = "type")
-  ws <- correct(X, gr, coords = ss$coords, index = ss$index, seed = 1)
+  ws <- correct(X, gr, coords = ss$coords, index = ss$index, mode = "whiten", seed = 1)
   expect_identical(ws$mode, "whiten")
   expect_true(all(is.finite(ws$R)))
-  ref <- correct(ss$X, gr, coords = ss$coords, index = ss$index, seed = 1)
+  ref <- correct(ss$X, gr, coords = ss$coords, index = ss$index, mode = "whiten", seed = 1)
   expect_lt(max(abs(ws$R - ref$R)), 0.15)
+  ca <- correct(X, gr, coords = ss$coords, index = ss$index, seed = 1)
+  expect_identical(ca$mode, "conditional_ar")
+  expect_true(all(is.finite(ca$R)))
+  expect_lt(max(abs(ca$R - correct(ss$X, gr, coords = ss$coords, index = ss$index, seed = 1)$R)), 0.2)
 })
 
 test_that("correct() stops on missing values in the scale mode and on pairs never observed together", {
@@ -186,7 +190,7 @@ test_that("verify() describes every family with missing values on the observed r
   X[sample.int(nrow(X), 100), 1] <- NA
   X[ss$index$site == 3, 2] <- NA                          # a site never observed in one variable
   grs <- group_regimes(diagnose_variables(ss$X, coords = ss$coords, index = ss$index, nsim = 0), method = "type")
-  for (m in c("conditional", "whiten")) {
+  for (m in c("conditional", "conditional_ar", "whiten")) {
     vs <- verify(correct(X, grs, coords = ss$coords, index = ss$index, mode = m, seed = 1), X,
                  coords = ss$coords, index = ss$index, nperm = 19)
     expect_true(all(is.finite(as.matrix(vs$variables[, c("removed", "autocor_before", "autocor_after", "correlogram_p")]))))

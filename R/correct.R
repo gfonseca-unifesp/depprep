@@ -19,6 +19,12 @@
 #'
 #' Modes:
 #' * `"conditional"` (residuals on the basis): `(I - P) x`;
+#' * `"conditional_ar"` (space-time; decision D29): the residuals of the conditional mode,
+#'   pair by pair on the same bases, then an AR filter of each site with the coefficients
+#'   of each variable's group, for `R`. It removes the persistence in time of what the basis
+#'   leaves, which inflates the correlations of the conditional mode, and keeps the spatial
+#'   part of the association, which the whitening removes. The filter is applied to `R`
+#'   only: the data matrix `X` holds the residuals, without it;
 #' * `"whiten"`: the observations are whitened with the covariance estimated for each
 #'   group — a variogram model pooled over the group's variables in space, an AR model
 #'   in time (after removing the trend or seasonal terms of the group's basis), and both
@@ -49,11 +55,11 @@
 #'
 #' Defaults (decision D7, calibrated on the stage 5 simulations, where all basis
 #' approaches gave nearly the same error): spatial and temporal data use the conditional
-#' mode with the global basis, the simplest; spatio-temporal data use whitening with the
-#' groups, which erred about half as much there, because the shared process persists in
-#' time and the residual does not. In space-time the result is then the correlation of
-#' the innovations, which equals the residual correlation when the residual association
-#' does not itself persist in time.
+#' mode with the global basis, the simplest; spatio-temporal data use the conditional
+#' mode followed by the AR filter, with the groups (decision D29, which revises D7). When
+#' the association between variables is itself autocorrelated and each variable has noise
+#' of its own, as with satellite products, the whitening removed the association, the
+#' conditional mode inflated it, and this mode erred least (`analysis/09f`).
 #'
 #' **Missing values** (`NA` in `X`; decision D26, no imputation). Each variable uses its
 #' observed rows. The bases are selected with the missing values counting as the
@@ -76,7 +82,7 @@
 #' @param bases Optional named list with one basis per group (from
 #'   [build_group_basis()]), or one basis per dependent variable (named by variable)
 #'   when `scope = "variables"`; built when `NULL`.
-#' @param mode `"conditional"`, `"whiten"` or `"scale"`; `NULL` for the default of the
+#' @param mode `"conditional"`, `"conditional_ar"`, `"whiten"` or `"scale"`; `NULL` for the default of the
 #'   data family (see above).
 #' @param scope `"global"`, `"groups"` or `"variables"`; `NULL` for the default
 #'   (`"global"` for the conditional and scale modes in spatial and temporal data,
@@ -84,7 +90,7 @@
 #' @param data_basis Basis of each column of the data matrix `X`: `"own"` (default; a
 #'   basis selected on each variable alone, its selection under `scope = "variables"`,
 #'   in any mode; when `bases` are given, the basis given for its group) or `"union"`
-#'   (the union of all bases, the same for every variable; conditional mode).
+#'   (the union of all bases, the same for every variable; conditional modes).
 #' @param period Seasonal period for the seasonal groups: one number, or a vector named
 #'   by group. When `NULL`, the periods recorded in `grouping` by [group_regimes()] are
 #'   used; a seasonal group without any period gets 12, with a warning.
@@ -155,8 +161,9 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
   if (is.null(colnames(X))) colnames(X) <- paste0("V", seq_len(ncol(X)))
   family <- if (!is.null(coords) && !is.null(index)) "spatiotemporal" else if (!is.null(coords)) "spatial" else
     if (!is.null(time)) "temporal" else stop("Give `coords`, `time` or `coords` and `index`.", call. = FALSE)
-  if (is.null(mode)) mode <- if (family == "spatiotemporal") "whiten" else "conditional"
-  mode <- match.arg(mode, c("conditional", "whiten", "scale"))
+  if (is.null(mode)) mode <- if (family == "spatiotemporal") "conditional_ar" else "conditional"
+  mode <- match.arg(mode, c("conditional", "conditional_ar", "whiten", "scale"))
+  if (mode == "conditional_ar" && family != "spatiotemporal") stop("The conditional_ar mode is for space-time data.", call. = FALSE)
   if (is.null(scope)) scope <- if (is.null(bases) && mode != "whiten" && family != "spatiotemporal") "global" else "groups"
   scope <- match.arg(scope, c("groups", "global", "variables"))
   data_basis <- match.arg(data_basis)
@@ -263,8 +270,9 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
     return(out)
   }
 
-  # transformed data per group: residuals on a basis, or whitened observations
-  transform <- if (mode == "conditional") {
+  # transformed data per group: residuals on a basis (then filtered in time in the
+  # conditional_ar mode), or whitened observations
+  transform <- if (mode != "whiten") {
     function(cols, B) .resid_on(X[, cols, drop = FALSE], B)
   } else {
     Xw <- if (is.null(C)) X else .resid_on(X, C)             # the drivers are removed before the whitening
@@ -272,25 +280,34 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
       .whitener(Xw[, grp == g, drop = FALSE], g, gtype[[g]], bases[[g]], family, coords, time, index))
     function(cols, B, g) W[[g]](Xw[, cols, drop = FALSE])
   }
+  if (mode == "conditional_ar") {
+    n_s <- nrow(as.matrix(coords))
+    Xd <- if (is.null(C)) X else .resid_on(X, C)           # the AR models do not see the drivers
+    phi <- lapply(stats::setNames(groups, groups), function(g) .st_phi(Xd[, grp == g, drop = FALSE], index, n_s))
+    in_time <- function(E, g) .st_ar_filter(E, phi[[g]], index, n_s)
+  }
   ug <- c(groups, if (any(grp == "none")) "none")
   R <- diag(ncol(X)); dimnames(R) <- list(colnames(X), colnames(X))
   union_kn <- NULL
   for (a in seq_along(ug)) for (b in a:length(ug)) {
     ga <- ug[a]; gb <- ug[b]
     ia <- which(grp == ga); ib <- which(grp == gb)
-    if (mode == "conditional") {
+    if (mode == "whiten") {
+      Ea <- transform(ia, NULL, ga); Eb <- transform(ib, NULL, gb)
+    } else {
       U <- if (ga == gb) basis_of(ga) else suppressWarnings(union_basis(basis_of(ga), basis_of(gb), kn_max = kn_max))
       Ea <- transform(ia, U); Eb <- transform(ib, U)
       if (ga != gb) {
         union_kn <- rbind(union_kn, data.frame(group_a = ga, group_b = gb, k = attr(U, "k"), kn = attr(U, "kn")))
         if (attr(U, "kn") > kn_max) warn <- c(warn, sprintf("union of %s and %s: k/n = %.2f > %.2f", ga, gb, attr(U, "kn"), kn_max))
       }
-    } else {
-      Ea <- transform(ia, NULL, ga); Eb <- transform(ib, NULL, gb)
+      if (mode == "conditional_ar") { Ea <- in_time(Ea, ga); Eb <- in_time(Eb, gb) }
+    }
+    if (mode != "conditional") {
       m <- min(nrow(Ea), nrow(Eb))                       # AR filters drop the first observations
       Ea <- utils::tail(Ea, m); Eb <- utils::tail(Eb, m)
     }
-    R[ia, ib] <- if (gaps) stats::cor(Ea, Eb, use = "pairwise.complete.obs") else stats::cor(Ea, Eb)
+    R[ia, ib] <- if (gaps || mode == "conditional_ar") stats::cor(Ea, Eb, use = "pairwise.complete.obs") else stats::cor(Ea, Eb)
     R[ib, ia] <- t(R[ia, ib])
   }
   diag(R) <- 1
@@ -313,7 +330,7 @@ correct <- function(X, grouping, coords = NULL, time = NULL, index = NULL, bases
       if (!is.null(variable_bases)) .with_covariates(variable_bases[[colnames(X)[j]]], C) else basis_of(grp[j])   # bases given: use them
     E <- vapply(seq_len(ncol(X)), function(j) .resid_on(X[, j, drop = FALSE], own(j))[, 1], numeric(n))
     E <- matrix(E, n); colnames(E) <- colnames(X); E
-  } else if (mode == "conditional") {
+  } else if (mode != "whiten") {
     U_all <- if (length(groups)) suppressWarnings(do.call(union_basis, c(unname(bases), kn_max = kn_max))) else empty
     E <- .resid_on(X, U_all); colnames(E) <- colnames(X); E
   } else {
@@ -453,23 +470,6 @@ print.depprep_corrected <- function(x, ...) {
     }
     M
   }
-  # AR coefficients pooled over the columns; with gaps the AR fit skips them (and the
-  # orders whose AIC cannot be computed are not chosen)
-  ar_coef <- function(series) {
-    na <- if (anyNA(series)) stats::na.pass else stats::na.fail
-    fit <- function(x, ...) suppressWarnings(stats::ar(x, na.action = na, ...))
-    orders <- vapply(seq_len(ncol(series)), function(j) fit(series[, j], aic = TRUE, order.max = 5)$order, 0)
-    p <- max(1, round(stats::median(orders)))
-    coefs <- vapply(seq_len(ncol(series)), function(j) fit(series[, j], aic = FALSE, order.max = p)$ar, numeric(p))
-    matrix(coefs, nrow = p) |> rowMeans()
-  }
-  ar_filter <- function(M, phi) {
-    p <- length(phi)
-    M <- as.matrix(M)
-    out <- M[-(1:p), , drop = FALSE]
-    for (i in seq_len(p)) out <- out - phi[i] * M[(p + 1 - i):(nrow(M) - i), , drop = FALSE]
-    out
-  }
   if (family == "spatial") {
     sw <- spatial_W(coords, Z)
     return(function(M) spatial_whiten(sw, scale(as.matrix(M), scale = FALSE)))
@@ -478,8 +478,8 @@ print.depprep_corrected <- function(x, ...) {
     ord <- order(time)
     det <- if (type %in% c("seasonal", "trend")) basis else NULL
     pre <- function(M) { M <- as.matrix(M)[ord, , drop = FALSE]; if (is.null(det)) scale(M, scale = FALSE) else .resid_on(M, unclass(det)[ord, , drop = FALSE]) }
-    phi <- ar_coef(pre(Z))
-    return(function(M) ar_filter(pre(M), phi))
+    phi <- .ar_coef(pre(Z))
+    return(function(M) .ar_filter(pre(M), phi))
   }
   # space-time: rows ordered by index; whiten sites at each time, then filter each site
   n_s <- nrow(as.matrix(coords)); tt <- match(index$time, sort(unique(index$time))); n_t <- max(tt)
@@ -487,16 +487,62 @@ print.depprep_corrected <- function(x, ...) {
   site_means <- do.call(cbind, lapply(seq_len(ncol(Z)), function(j) rowMeans(to_cube(Z[, j]), na.rm = gaps)))
   site_means[is.nan(site_means)] <- NA                    # a site never observed in a variable
   sw <- spatial_W(coords, site_means)
-  time_means <- do.call(cbind, lapply(seq_len(ncol(Z)), function(j) colMeans(to_cube(Z[, j]), na.rm = gaps)))
-  time_means[is.nan(time_means)] <- NA
-  phi <- ar_coef(scale(time_means, scale = FALSE))
+  phi <- .st_phi(Xg, index, n_s)
   function(M) {
     M <- scale(as.matrix(M), scale = FALSE)
     do.call(cbind, lapply(seq_len(ncol(M)), function(j) {
       cube <- spatial_whiten(sw, to_cube(M[, j]))         # spatial whitening of every time
-      as.vector(t(ar_filter(t(cube), phi)))               # AR filtering of every site
+      as.vector(t(.ar_filter(t(cube), phi)))              # AR filtering of every site
     }))
   }
+}
+
+# AR coefficients pooled over the columns; with gaps the AR fit skips them (and the orders
+# whose AIC cannot be computed are not chosen).
+.ar_coef <- function(series) {
+  na <- if (anyNA(series)) stats::na.pass else stats::na.fail
+  fit <- function(x, ...) suppressWarnings(stats::ar(x, na.action = na, ...))
+  orders <- vapply(seq_len(ncol(series)), function(j) fit(series[, j], aic = TRUE, order.max = 5)$order, 0)
+  p <- max(1, round(stats::median(orders)))
+  coefs <- vapply(seq_len(ncol(series)), function(j) fit(series[, j], aic = FALSE, order.max = p)$ar, numeric(p))
+  matrix(coefs, nrow = p) |> rowMeans()
+}
+
+# Each column of M (rows in time order) filtered with the AR coefficients phi, without the
+# first rows. A value is missing where it or one of its lags is missing.
+.ar_filter <- function(M, phi) {
+  p <- length(phi)
+  M <- as.matrix(M)
+  out <- M[-(1:p), , drop = FALSE]
+  for (i in seq_len(p)) out <- out - phi[i] * M[(p + 1 - i):(nrow(M) - i), , drop = FALSE]
+  out
+}
+
+# The values of one space-time variable as sites x times, NA where there is no row.
+.to_cube <- function(v, index, n_s) {
+  tt <- match(index$time, sort(unique(index$time)))
+  m <- matrix(NA_real_, n_s, max(tt))
+  m[cbind(index$site, tt)] <- v
+  m
+}
+
+# AR coefficients of a space-time group, from the mean over the sites of each of its
+# standardised columns.
+.st_phi <- function(Xg, index, n_s) {
+  Z <- scale(Xg)
+  means <- do.call(cbind, lapply(seq_len(ncol(Z)), function(j) colMeans(.to_cube(Z[, j], index, n_s), na.rm = TRUE)))
+  means[is.nan(means)] <- NA                               # a time never observed in a variable
+  .ar_coef(scale(means, scale = FALSE))
+}
+
+# The columns of M filtered in time, site by site, with the coefficients phi (`NULL`: none).
+# Rows sorted by time and by site within a time, without the first times.
+.st_ar_filter <- function(M, phi, index, n_s) {
+  M <- as.matrix(M)
+  do.call(cbind, lapply(seq_len(ncol(M)), function(j) {
+    cube <- .to_cube(M[, j], index, n_s)
+    as.vector(if (length(phi)) t(.ar_filter(t(cube), phi)) else cube)
+  }))
 }
 
 # Seasonal period of a group (`g`, or NULL for one basis of all groups): the `period`

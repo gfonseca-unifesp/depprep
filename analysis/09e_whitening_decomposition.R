@@ -62,7 +62,7 @@ W <- stats::setNames(lapply(unique(groups$group), function(g) {
   .whitener(X[, cols, drop = FALSE], g, groups$regime[groups$group == g][1], NULL, "spatiotemporal", coords, NULL, index)
 }), unique(groups$group))
 spatial <- function(z, g) { e <- environment(W[[g]]); e$spatial_whiten(e$sw, e$to_cube(z)) }
-temporal <- function(C, g) { e <- environment(W[[g]]); t(e$ar_filter(t(C), e$phi)) }
+temporal <- function(C, g) t(.ar_filter(t(C), environment(W[[g]])$phi))
 last_times <- function(M, m) M[, utils::tail(seq_len(ncol(M)), m), drop = FALSE]
 r_aligned <- function(A, B) { m <- min(ncol(A), ncol(B)); r_of(last_times(A, m), last_times(B, m)) }
 Z <- scale(X)

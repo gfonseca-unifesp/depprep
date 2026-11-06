@@ -37,7 +37,7 @@ group of each variable (\code{"none"} for variables without dependence).}
 \code{\link[=build_group_basis]{build_group_basis()}}), or one basis per dependent variable (named by variable)
 when \code{scope = "variables"}; built when \code{NULL}.}
 
-\item{mode}{\code{"conditional"}, \code{"whiten"} or \code{"scale"}; \code{NULL} for the default of the
+\item{mode}{\code{"conditional"}, \code{"conditional_ar"}, \code{"whiten"} or \code{"scale"}; \code{NULL} for the default of the
 data family (see above).}
 
 \item{scope}{\code{"global"}, \code{"groups"} or \code{"variables"}; \code{NULL} for the default
@@ -47,7 +47,7 @@ data family (see above).}
 \item{data_basis}{Basis of each column of the data matrix \code{X}: \code{"own"} (default; a
 basis selected on each variable alone, its selection under \code{scope = "variables"},
 in any mode; when \code{bases} are given, the basis given for its group) or \code{"union"}
-(the union of all bases, the same for every variable; conditional mode).}
+(the union of all bases, the same for every variable; conditional modes).}
 
 \item{period}{Seasonal period for the seasonal groups: one number, or a vector named
 by group. When \code{NULL}, the periods recorded in \code{grouping} by \code{\link[=group_regimes]{group_regimes()}} are
@@ -124,6 +124,12 @@ union of all the bases instead (one basis for every variable).
 Modes:
 \itemize{
 \item \code{"conditional"} (residuals on the basis): \verb{(I - P) x};
+\item \code{"conditional_ar"} (space-time; decision D29): the residuals of the conditional mode,
+pair by pair on the same bases, then an AR filter of each site with the coefficients
+of each variable's group, for \code{R}. It removes the persistence in time of what the basis
+leaves, which inflates the correlations of the conditional mode, and keeps the spatial
+part of the association, which the whitening removes. The filter is applied to \code{R}
+only: the data matrix \code{X} holds the residuals, without it;
 \item \code{"whiten"}: the observations are whitened with the covariance estimated for each
 group — a variogram model pooled over the group's variables in space, an AR model
 in time (after removing the trend or seasonal terms of the group's basis), and both
@@ -155,11 +161,11 @@ without dependence are never corrected among themselves.
 
 Defaults (decision D7, calibrated on the stage 5 simulations, where all basis
 approaches gave nearly the same error): spatial and temporal data use the conditional
-mode with the global basis, the simplest; spatio-temporal data use whitening with the
-groups, which erred about half as much there, because the shared process persists in
-time and the residual does not. In space-time the result is then the correlation of
-the innovations, which equals the residual correlation when the residual association
-does not itself persist in time.
+mode with the global basis, the simplest; spatio-temporal data use the conditional
+mode followed by the AR filter, with the groups (decision D29, which revises D7). When
+the association between variables is itself autocorrelated and each variable has noise
+of its own, as with satellite products, the whitening removed the association, the
+conditional mode inflated it, and this mode erred least (\verb{analysis/09f}).
 
 \strong{Missing values} (\code{NA} in \code{X}; decision D26, no imputation). Each variable uses its
 observed rows. The bases are selected with the missing values counting as the

@@ -67,7 +67,7 @@ test_that("temporal and spatio-temporal grouping run and report periods", {
   g2 <- sim_groups(sim_group("sep", 4, "separable_ar1", range = 0.5, phi = 0.9),
                    sim_group("common", 4, "temporal_common", phi = 0.9))
   s2 <- sim_spatiotemporal(50, 60, g2, seed = 4)
-  gr2 <- group_regimes(diagnose_variables(s2, nsim = 99), data = s2, B = 2, seed = 1)
+  gr2 <- group_regimes(diagnose_variables(s2, nsim = 199), data = s2, B = 2, seed = 1)
   expect_equal(nrow(gr2), 8)
   shared <- gr2$group != "none" & (duplicated(gr2$group) | duplicated(gr2$group, fromLast = TRUE))
   expect_false(anyNA(gr2$stability[shared]))

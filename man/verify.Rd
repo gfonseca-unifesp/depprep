@@ -18,7 +18,7 @@ verify(
 )
 }
 \arguments{
-\item{corrected}{Output of \code{\link[=correct]{correct()}} (conditional or whiten mode).}
+\item{corrected}{Output of \code{\link[=correct]{correct()}} (conditional, conditional_ar or whiten mode).}
 
 \item{X}{The raw data (matrix or \code{depprep_sim}), as given to \code{\link[=correct]{correct()}}; may hold
 missing values (\code{NA}).}

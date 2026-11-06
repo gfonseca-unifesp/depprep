@@ -196,7 +196,7 @@ test_that("the period argument sets the seasonal period; a missing period warns"
   expect_equal(depprep:::.period_of("seasonal", NULL, c(a = 6, b = 12, c = 12), gr), 12)
 })
 
-test_that("defaults follow decision D7: global basis in space and time, whitening in space-time", {
+test_that("defaults: global basis in space and time (D7), conditional + AR in space-time (D29)", {
   skip_on_cran()
   g <- sim_groups(sim_group("a", 3, "matern", range = 0.5), sim_group("b", 3, "matern", range = 0.15),
                   sim_group("none", 2, "none"))
@@ -214,9 +214,9 @@ test_that("defaults follow decision D7: global basis in space and time, whitenin
   expect_identical(correct(s, gr, scope = "groups")$scope, "groups")
   g2 <- sim_groups(sim_group("sep", 3, "separable_ar1", range = 0.5, phi = 0.9), sim_group("none", 2, "none"))
   s2 <- sim_spatiotemporal(30, 40, g2, seed = 8)
-  gr2 <- group_regimes(diagnose_variables(s2, nsim = 99))
+  gr2 <- group_regimes(diagnose_variables(s2, nsim = 199))
   cw <- correct(s2, gr2)
-  expect_identical(cw$mode, "whiten")
+  expect_identical(cw$mode, "conditional_ar")
   expect_identical(cw$scope, "groups")
 })
 
@@ -330,7 +330,7 @@ test_that("in space-time the drivers repeat over the sites and are matched by ti
   C <- unclass(cr$covariates)
   expect_equal(dim(C), c(600L, 1L))
   expect_equal(unname(C[s$index$time == 5, 1]), rep(unname(C[which(s$index$time == 5)[1], 1]), 20))
-  expect_identical(cr$mode, "whiten")
+  expect_identical(cr$mode, "conditional_ar")
   expect_true(all(cr$partition$drivers_only + cr$partition$shared > 0.2))
   o <- sample(30)
   by_time <- correct(s, gr, covariates = data.frame(time = o, enso = driver[o]))
@@ -351,4 +351,66 @@ test_that("covariates in the wrong form stop with a clear message", {
   g <- sim_groups(sim_group("a", 2, "matern", range = 0.5))
   s <- sim_spatial(50, g, seed = 1)
   expect_error(correct(s, c(a_1 = "g1", a_2 = "g1"), covariates = 1:50), "vary in time")
+})
+
+test_that("the AR helpers build the cube, the coefficients and the filter of each site", {
+  index <- expand.grid(site = 1:3, time = c(10, 20, 30, 40))
+  v <- seq_len(12)
+  cube <- depprep:::.to_cube(v, index, 3)
+  expect_identical(dim(cube), c(3L, 4L))
+  expect_equal(cube[2, 3], 8)
+  expect_true(is.na(depprep:::.to_cube(v[-1], index[-1, ], 3)[1, 1]))
+  expect_equal(depprep:::.ar_filter(matrix(1:4), 0.5)[, 1], c(1.5, 2, 2.5))
+  M <- cbind(v, 2 * v)
+  flt <- depprep:::.st_ar_filter(M, 0.5, index, 3)
+  expect_identical(dim(flt), c(9L, 2L))
+  expect_equal(flt[, 1], as.vector(cube[, 2:4] - 0.5 * cube[, 1:3]))
+  shuffled <- sample(12)
+  expect_equal(depprep:::.st_ar_filter(M[shuffled, ], 0.5, index[shuffled, ], 3), flt)
+  expect_equal(depprep:::.st_ar_filter(M[shuffled, ], NULL, index[shuffled, ], 3)[, 1], v)
+  set.seed(3)
+  n_t <- 400
+  series <- as.numeric(stats::arima.sim(list(ar = 0.7), n_t))
+  ix <- expand.grid(site = 1:5, time = seq_len(n_t))
+  Xg <- cbind(a = series[ix$time] + stats::rnorm(nrow(ix), sd = 0.2), b = series[ix$time] + stats::rnorm(nrow(ix), sd = 0.2))
+  phi <- depprep:::.st_phi(Xg, ix, 5)
+  expect_equal(phi[1], 0.7, tolerance = 0.2)
+})
+
+test_that("the conditional_ar mode filters the residuals of the conditional mode in time", {
+  g <- sim_groups(sim_group("sep", 3, "separable_ar1", range = 0.5, phi = 0.9), sim_group("seas", 3, "separable_seasonal", range = 0.5, period = 12),
+                  sim_group("none", 2, "none"))
+  s <- sim_spatiotemporal(20, 36, g, seed = 8)
+  grp <- stats::setNames(rep(c("g1", "g2", "none"), c(3, 3, 2)), colnames(s$X))
+  gr <- data.frame(variable = colnames(s$X), group = grp, group_type = rep(c("separable_ar1", "separable_seasonal", "none"), c(3, 3, 2)))
+  cc <- correct(s, gr, mode = "conditional", data_basis = "union", period = c(g2 = 12))
+  ca <- correct(s, gr, bases = cc$bases, mode = "conditional_ar", data_basis = "union", period = c(g2 = 12))
+  expect_identical(ca$mode, "conditional_ar")
+  expect_identical(ca$scope, "groups")
+  expect_equal(ca$X, cc$X)                                 # the filter is applied to R only
+  expect_equal(ca$union_kn, cc$union_kn)
+  # one pair across groups, by hand
+  X <- s$X; a <- colnames(X)[1]; b <- colnames(X)[4]
+  U <- union_basis(cc$bases$g1, cc$bases$g2)
+  phi_of <- function(k) depprep:::.st_phi(X[, grp == k, drop = FALSE], s$index, 20)
+  Ea <- depprep:::.st_ar_filter(depprep:::.resid_on(X[, a, drop = FALSE], U), phi_of("g1"), s$index, 20)
+  Eb <- depprep:::.st_ar_filter(depprep:::.resid_on(X[, b, drop = FALSE], U), phi_of("g2"), s$index, 20)
+  m <- min(nrow(Ea), nrow(Eb))
+  expect_equal(ca$R_pairwise[a, b], stats::cor(utils::tail(Ea, m), utils::tail(Eb, m))[1, 1])
+  # the variables without dependence are not filtered among themselves
+  expect_equal(ca$R_pairwise["none_1", "none_2"], cc$R_pairwise["none_1", "none_2"])
+  v <- verify(ca, s$X, coords = s$coords, index = s$index, nperm = 9)
+  expect_true(is.finite(v$q3$statistic))
+  expect_error(correct(sim_temporal(60, sim_groups(sim_group("ar", 2, "ar1", phi = 0.5)), seed = 1), c(ar_1 = "g", ar_2 = "g"), mode = "conditional_ar"),
+               "for space-time data")
+})
+
+test_that("the default of correct() in space-time accepts drivers", {
+  g <- sim_groups(sim_group("sep", 3, "separable_ar1", range = 0.5, phi = 0.9), sim_group("none", 1, "none"))
+  s <- sim_spatiotemporal(15, 30, g, seed = 4)
+  grp <- data.frame(variable = colnames(s$X), group = c("g1", "g1", "g1", "none"), group_type = c(rep("separable_ar1", 3), "none"))
+  cr <- correct(s, grp)
+  expect_identical(cr$mode, "conditional_ar")
+  with_driver <- correct(s, grp, covariates = data.frame(d = stats::rnorm(30)))
+  expect_identical(with_driver$mode, "conditional_ar")
 })

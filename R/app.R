@@ -539,6 +539,7 @@ run_app <- function(launch.browser = interactive()) {
       shiny::tabPanel("4. Correction",
         shiny::uiOutput("correct_help"),
         shiny::selectInput("mode", "Mode", c("Default for the data" = "default", "Conditional (residuals on the bases)" = "conditional",
+                                         "Conditional + AR, space-time (residuals filtered in time)" = "conditional_ar",
                                          "Whitening (innovations)" = "whiten")),
         shiny::selectInput("scope", "Bases for R", c("Default for the data" = "default", "One per group" = "groups", "One global basis" = "global",
                                                   "Union of the variables' bases" = "variables")),
@@ -754,7 +755,7 @@ run_app <- function(launch.browser = interactive()) {
   })
   settings <- shiny::reactive({
     d <- dat()
-    mode <- if (input$mode == "default") (if (d$family == "spatiotemporal") "whiten" else "conditional") else input$mode
+    mode <- if (input$mode == "default") (if (d$family == "spatiotemporal") "conditional_ar" else "conditional") else input$mode
     scope <- if (input$scope == "default") (if (mode != "whiten" && d$family != "spatiotemporal" && !length(rv$menus)) "global" else "groups") else input$scope
     list(mode = mode, scope = scope)
   })
@@ -765,7 +766,7 @@ run_app <- function(launch.browser = interactive()) {
                         if (n > 5000) min(8L, max(1L, parallel::detectCores() - 1L)) else 1L, min = 1, max = 64, step = 1)
   })
   output$correct_help <- shiny::renderUI(shiny::p(class = "help",
-    "Default: in space and in time, R from one global basis of the dependent variables, conditional mode; in space-time, whitening by group. The data matrix X always has each variable corrected with its own basis, which keeps the classes. With a menu, the bases are built per group."))
+    "Default: in space and in time, R from one global basis of the dependent variables, conditional mode; in space-time, conditional + AR by group. The data matrix X always has each variable corrected with its own basis, which keeps the classes. With a menu, the bases are built per group."))
   shiny::observeEvent(input$correct, {
     shiny::req(rv$grouping)
     d <- dat(); st <- settings()

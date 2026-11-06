@@ -86,7 +86,7 @@
 #' where both variables have a value, and the Mantel correlogram on the rows where every
 #' variable has a value.
 #'
-#' @param corrected Output of [correct()] (conditional or whiten mode).
+#' @param corrected Output of [correct()] (conditional, conditional_ar or whiten mode).
 #' @param X The raw data (matrix or `depprep_sim`), as given to [correct()]; may hold
 #'   missing values (`NA`).
 #' @param coords,time,index As in [correct()].
@@ -141,7 +141,7 @@
 verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, period = NULL, alpha = 0.05,
                    nperm = 199, q3_threshold = NULL, seed = 1L) {
   stopifnot(inherits(corrected, "depprep_corrected"))
-  if (corrected$mode == "scale") stop("`verify()` needs the conditional or whiten mode.", call. = FALSE)
+  if (corrected$mode == "scale") stop("`verify()` needs the conditional, conditional_ar or whiten mode.", call. = FALSE)
   if (inherits(X, "depprep_sim")) {
     d <- .data_parts(X); X <- d$X; coords <- d$coords; time <- d$time; index <- d$index
   }
@@ -158,7 +158,7 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
   # with data_basis = "own" (the default, D17) every column of the data matrix holds that
   # variable's residual on its own basis, in the rows of X, in any mode
   own <- identical(corrected$data_basis, "own")
-  if (corrected$mode == "conditional" || own) E <- E[ord, , drop = FALSE]
+  if (corrected$mode != "whiten" || own) E <- E[ord, , drop = FALSE]
   keep <- utils::tail(seq_len(nrow(Xo)), nrow(E))
   gaps <- anyNA(X) || anyNA(E)
   # Moran's I at the sites where z has a value (the neighbours among them)
@@ -175,8 +175,8 @@ verify <- function(corrected, X, coords = NULL, time = NULL, index = NULL, perio
       lw <- .knn_weights(coords)
       function(z, rows) moran_at(if (anyNA(z)) mean_by_site(z, index$site[rows]) else tapply(z, index$site[rows], mean), lw)
     })
-  U <- if (corrected$mode == "conditional") .union_of_bases(corrected, nrow(X)) else matrix(0, nrow(X), 0)
-  parts <- if (corrected$mode == "conditional") .large_scale_parts(X, corrected, U) else .no_large_parts(X)
+  U <- if (corrected$mode != "whiten") .union_of_bases(corrected, nrow(X)) else matrix(0, nrow(X), 0)
+  parts <- if (corrected$mode != "whiten") .large_scale_parts(X, corrected, U) else .no_large_parts(X)
   removed <- function(j) {
     o <- !is.na(E[, j]) & !is.na(Xo[keep, j])               # the rows with a value before and after
     1 - stats::var(E[o, j]) / stats::var(Xo[keep, j][o])
