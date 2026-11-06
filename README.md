@@ -427,6 +427,7 @@ Run from any folder; `RSCRIPT` sets the R to use. Each step writes its log to
 | | 09e | `09e_whitening_decomposition.R` | Where the associations of the ocean case live, and which step of the whitening removes them | 09d | — | 1 min |
 | | 09f | `09f_r_mode_simulation.R` | Which mode best estimates R in space-time when the association is autocorrelated and sensors have their own noise (resumable) | — | — | 2.5 h |
 | | 09g | `09g_fza_design_effect.R` | The same flow on the shelf and on the slope, to measure the effect of the extent of the grid | 09d | — | 1 h |
+| | 09h | `09h_app_times.R` | The time of what the app runs on the shelf and on the slope, for the messages of steps 4 and 5 | 09g | — | 30 min |
 
 Notes:
 
