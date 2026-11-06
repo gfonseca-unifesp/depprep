@@ -495,6 +495,20 @@ run_app <- function(launch.browser = interactive()) {
   data.frame(x = s$coords[, 1], y = s$coords[, 2], s$X)
 }
 
+# The question of step 2 (decision D30): the data set the design, the user says what is
+# being estimated, and that gives the mode.
+.question_choices <- c(
+  "Do the variables go together once the large-scale structure is set aside? (association of the residuals)" = "association",
+  "Do only their changes go together, from one site or time step to the next? (innovations)" = "innovations",
+  "Not sure: run both in step 4 and show where they disagree" = "unsure")
+.question_help <- paste(
+  "Example: chlorophyll and salinity, monthly, on a grid. The first question asks whether low salinity comes with high chlorophyll beyond",
+  "the map and the seasonal cycle they share, so slow associations count. The second asks whether a month-to-month change in salinity",
+  "comes with a change in chlorophyll, so slow associations fade. Both are legitimate, and they can differ.")
+.question_mode <- function(question, family) {
+  if (question == "innovations") "whiten" else if (family == "spatiotemporal") "conditional_ar" else "conditional"
+}
+
 # --- User interface -------------------------------------------------------------------
 
 .app_ui <- function() {
@@ -513,6 +527,8 @@ run_app <- function(launch.browser = interactive()) {
         shiny::uiOutput("data_msg"),
         shiny::tableOutput("head")),
       shiny::tabPanel("2. Context",
+        shiny::radioButtons("question", "What do you want to estimate?", .question_choices),
+        shiny::p(class = "help", .question_help),
         shiny::radioButtons("technique", "The corrected data are for",
           c("PCA (reads the corrected correlation matrix R)" = "pca", "MDS" = "mds", "k-means" = "kmeans", "SOM" = "som",
             "HDBSCAN" = "hdbscan")),
@@ -538,7 +554,7 @@ run_app <- function(launch.browser = interactive()) {
         shiny::verbatimTextOutput("menus")),
       shiny::tabPanel("4. Correction",
         shiny::uiOutput("correct_help"),
-        shiny::selectInput("mode", "Mode", c("Default for the data" = "default", "Conditional (residuals on the bases)" = "conditional",
+        shiny::selectInput("mode", "Mode", c("As answered in step 2" = "default", "Conditional (residuals on the bases)" = "conditional",
                                          "Conditional + AR, space-time (residuals filtered in time)" = "conditional_ar",
                                          "Whitening (innovations)" = "whiten")),
         shiny::selectInput("scope", "Bases for R", c("Default for the data" = "default", "One per group" = "groups", "One global basis" = "global",
@@ -625,7 +641,9 @@ run_app <- function(launch.browser = interactive()) {
   })
   output$head <- shiny::renderTable(utils::head(rv$df, 6))
   output$context_msg <- shiny::renderUI({
-    out <- list(shiny::p(if (input$technique == "pca") "PCA reads the corrected correlation matrix R, built with the shared basis of each group." else
+    out <- list(shiny::p(sprintf("Step 4 estimates R with the mode %s by default.", .question_mode(input$question, input$family))),
+      shiny::p(class = "help", "The design is yours: the correction removes what is large scale for the grid and the period you loaded. Another extent can change what counts as large scale, and with it the result."),
+      shiny::p(if (input$technique == "pca") "PCA reads the corrected correlation matrix R, built with the shared basis of each group." else
       "These techniques read the corrected data matrix X, in which each variable is corrected with its own basis: it keeps the classes best."))
     if (input$regions != "no") out <- c(out, list(shiny::div(class = "note",
       "Classes that are regions or periods live at the scale of the basis, and the correction removes them together with the dependence. Step 5 warns when much of the association is at that scale (Q3); in that case use the raw data, or the scale mode of correct(), for those classes.")))
@@ -755,7 +773,7 @@ run_app <- function(launch.browser = interactive()) {
   })
   settings <- shiny::reactive({
     d <- dat()
-    mode <- if (input$mode == "default") (if (d$family == "spatiotemporal") "conditional_ar" else "conditional") else input$mode
+    mode <- if (input$mode == "default") .question_mode(input$question, d$family) else input$mode
     scope <- if (input$scope == "default") (if (mode != "whiten" && d$family != "spatiotemporal" && !length(rv$menus)) "global" else "groups") else input$scope
     list(mode = mode, scope = scope)
   })

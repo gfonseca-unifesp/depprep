@@ -245,11 +245,28 @@ crt <- correct(Xt, group_regimes(diagnose_variables(Xt, time = series$time)), ti
 | Step | What you do | What you get |
 | --- | --- | --- |
 | 1. Data | Load a CSV with one row per observation and mark the position columns (x and y, time, site); choose spatial, temporal or space-time | A check of the columns and the first rows |
-| 2. Context | Say which technique the data are for (PCA, or MDS, k-means, SOM and HDBSCAN) and whether the classes you seek could be regions or periods | Which corrected matrix the technique reads, and a warning when correcting would remove the classes you are looking for |
+| 2. Context | Say what you want to estimate (see below), which technique the data are for (PCA, or MDS, k-means, SOM and HDBSCAN) and whether the classes you seek could be regions or periods | The mode of the correlation matrix, which corrected matrix the technique reads, and a warning when correcting would remove the classes you are looking for |
 | 3. Diagnosis | Look at each variable's dependence and its plots (variogram, ACF, periodogram); change a regime by hand, or build the menu of structures of a group (trend, cycle with its period, Moran maps with a chosen graph, directional maps) | The groups of variables that will share a basis |
 | 4. Correction | Accept the default (the data matrix with one basis per variable, the correlation matrix with the shared basis) or choose another mode (conditional, conditional + AR, whitening) and other bases for the correlation matrix | The bases used, with their size (k, k/n) and first terms |
 | 5. Verification | Check what was removed and what was kept | The autocorrelation of each variable before and after, the change in the correlations, the warning of signal at the scale of the basis, and a preview of the technique (PCA or k-means) before and after |
 | 6. Export | Download the results | The corrected data (CSV), the corrected correlation matrix (CSV), the HTML report of `report_correction()` and the R code |
+
+**The question of step 2.** The data set the design (a map, a series, a grid over time);
+what is being estimated is a choice the package cannot make for you. Suppose chlorophyll
+and salinity, monthly, on a grid:
+
+- *Do the variables go together once the large-scale structure is set aside?* Does low
+  salinity come with high chlorophyll, beyond the map and the seasonal cycle they share?
+  Slow associations count. This is the default (conditional modes).
+- *Do only their changes go together?* Does a month-to-month change in salinity come with
+  a change in chlorophyll? Slow associations fade (whitening).
+
+Both questions are legitimate, and they can give different answers. If you are not sure,
+answer so: step 4 runs both and lists the pairs on which they disagree.
+
+The design is also a choice with consequences. The correction removes what is large scale
+for the grid and the period you loaded, so another extent can change what counts as large
+scale, and with it the result.
 
 Notes and limits shown in the app: the share of missing values, when there are any
 (empty cells are accepted; missing positions are not); coordinates in degrees should be

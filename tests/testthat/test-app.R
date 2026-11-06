@@ -166,15 +166,30 @@ test_that("the R code of the app parses and reproduces the correction", {
   expect_equal(dim(env$cr$X), c(200, 10))
 })
 
+test_that("the question of step 2 gives the mode of each family", {
+  expect_setequal(unname(depprep:::.question_choices), c("association", "innovations", "unsure"))
+  for (q in c("association", "unsure")) {
+    expect_identical(depprep:::.question_mode(q, "spatial"), "conditional")
+    expect_identical(depprep:::.question_mode(q, "temporal"), "conditional")
+    expect_identical(depprep:::.question_mode(q, "spatiotemporal"), "conditional_ar")
+  }
+  for (fam in c("spatial", "temporal", "spatiotemporal")) expect_identical(depprep:::.question_mode("innovations", fam), "whiten")
+})
+
 test_that("the app server loads the example and builds the data", {
   skip_if_not_installed("shiny")
   shiny::testServer(depprep:::.app_server, {
     session$setInputs(example = 1, family = "spatial")
     expect_equal(nrow(rv$df), 200)
     session$setInputs(x = "x", y = "y", variables = setdiff(names(rv$df), c("x", "y")), technique = "x", regions = "yes",
-                      mode = "default", scope = "default")
+                      question = "association", mode = "default", scope = "default")
     expect_equal(ncol(dat()$X), 10)
     expect_equal(settings()$scope, "global")
+    expect_equal(settings()$mode, "conditional")
+    session$setInputs(question = "innovations")
+    expect_equal(settings()$mode, "whiten")
+    session$setInputs(mode = "conditional")           # step 4 can still overrule the answer
+    expect_equal(settings()$mode, "conditional")
   })
   expect_s3_class(depprep:::.app_ui(), "shiny.tag.list")
 })
