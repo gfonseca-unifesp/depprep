@@ -220,6 +220,23 @@ test_that("the other mode gives the R of a correction run alone, with the bases 
   expect_identical(o$mode, "whiten")
 })
 
+test_that("the predicted time holds the times measured on real and simulated data", {
+  inside <- function(rows, cores, seconds) { m <- depprep:::.predicted_minutes(rows, cores); seconds / 60 >= m[["low"]] && seconds / 60 <= m[["high"]] }
+  expect_true(inside(20925, 16, 525))     # the shelf of the Foz, default mode (analysis/09h)
+  expect_true(inside(37479, 16, 223))     # the slope, conditional + AR (analysis/09g)
+  expect_true(inside(58404, 16, 3349))    # the whole basin, conditional + AR (analysis/09d)
+  expect_true(inside(9300, 1, 196))       # analysis/08f
+  expect_true(inside(27900, 16, 582))
+  w <- depprep:::.time_words
+  expect_identical(w(c(low = 0.1, high = 0.5)), "under a minute")
+  expect_identical(w(c(low = 2, high = 13)), "about 2 to 13 minutes")
+  expect_identical(w(c(low = 60, high = 300)), "about 1 to 5 hours")
+  expect_match(depprep:::.time_message(20925, "spatiotemporal", "conditional_ar", 16), "reuses the bases")
+  expect_match(depprep:::.time_message(20925, "spatiotemporal", "conditional_ar", 16, "verify"), "pair by pair")
+  expect_match(depprep:::.time_message(20925, "spatiotemporal", "whiten", 16, "verify"), "no projected part")
+  expect_match(depprep:::.time_message(500, "spatial", "conditional"), "seconds to a few minutes")
+})
+
 test_that("the app server loads the example and builds the data", {
   skip_if_not_installed("shiny")
   shiny::testServer(depprep:::.app_server, {

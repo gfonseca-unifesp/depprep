@@ -537,6 +537,37 @@ run_app <- function(launch.browser = interactive()) {
   structure(d[order(-abs(d$difference)), ], row.names = NULL, n_pairs = nrow(low))
 }
 
+# Predicted minutes of correct() in space-time (decision D30). The time grows with the square
+# of the rows and falls slowly with the processes, as measured on the Foz and in the timing
+# runs (analysis/09d, 09g, 09h and 08f). The same size can take eight times less or 1.5 times
+# more, since the regimes count too: the shelf took longer than the larger slope.
+.predicted_minutes <- function(rows, cores = 1L) {
+  typical <- 6 * (rows / 1e4)^2 / cores^0.4
+  c(low = typical / 8, high = typical * 1.5)
+}
+
+.time_words <- function(minutes) {
+  if (minutes[["high"]] < 1) return("under a minute")
+  round2 <- function(x) as.numeric(formatC(x, digits = 2, format = "g"))
+  if (minutes[["high"]] < 120) return(sprintf("about %g to %g minutes", max(1, round2(minutes[["low"]])), round2(minutes[["high"]])))
+  sprintf("about %g to %g hours", round2(minutes[["low"]] / 60), round2(minutes[["high"]] / 60))
+}
+
+# The messages of steps 4 and 5: `step` is "correct" or "verify".
+.time_message <- function(rows, family, mode, cores = 1L, step = c("correct", "verify")) {
+  step <- match.arg(step)
+  if (family != "spatiotemporal") {
+    return("Expected time: seconds to a few minutes with a few thousand observations; larger data were not timed.")
+  }
+  m <- .predicted_minutes(rows, cores)
+  if (step == "correct") {
+    return(sprintf("Expected time with %d observations and %d process(es): %s. It grows with the square of the observations and depends on the regimes. Running the other mode too adds seconds to minutes, since it reuses the bases.",
+                   rows, cores, .time_words(m)))
+  }
+  if (mode == "whiten") return("Expected time: seconds to a minute, since whitening has no projected part.")
+  sprintf("Expected time: %s, because the projected part is computed pair by pair.", .time_words(m * 0.4))
+}
+
 # --- User interface -------------------------------------------------------------------
 
 .app_ui <- function() {
@@ -589,6 +620,7 @@ run_app <- function(launch.browser = interactive()) {
                                                   "Union of the variables' bases" = "variables")),
         shiny::uiOutput("cores_ui"),
         shiny::checkboxInput("both_modes", "Also run the other answer to the question of step 2 and show where the two disagree"),
+        shiny::uiOutput("time_correct"),
         shiny::actionButton("correct", "Correct"),
         shiny::tableOutput("bases"),
         shiny::uiOutput("correct_msg"),
@@ -603,6 +635,7 @@ run_app <- function(launch.browser = interactive()) {
             shiny::column(2, shiny::numericInput("fig_h", "Height (cm)", 9, min = 5, max = 60)),
             shiny::column(2, shiny::selectInput("fig_fmt", "Format", c("PNG" = "png", "PDF" = "pdf", "SVG" = "svg", "TIFF" = "tiff"))),
             shiny::column(2, shiny::numericInput("fig_dpi", "Resolution (dpi, PNG and TIFF)", 300, min = 72, max = 1200, step = 50)))),
+        shiny::uiOutput("time_verify"),
         shiny::actionButton("verify", "Verify"),
         shiny::uiOutput("q3_msg"),
         shiny::uiOutput("modes_msg5"),
@@ -818,6 +851,13 @@ run_app <- function(launch.browser = interactive()) {
   })
   output$correct_help <- shiny::renderUI(shiny::p(class = "help",
     "Default: in space and in time, R from one global basis of the dependent variables, conditional mode; in space-time, conditional + AR by group. The data matrix X always has each variable corrected with its own basis, which keeps the classes. With a menu, the bases are built per group."))
+  time_note <- function(step, mode) {
+    d <- tryCatch(dat(), error = function(e) NULL); shiny::req(d)
+    cores <- if (is.numeric(input$cores) && input$cores >= 1) input$cores else 1L
+    shiny::p(class = "help", .time_message(nrow(d$X), d$family, mode, cores, step))
+  }
+  output$time_correct <- shiny::renderUI(time_note("correct", settings()$mode))
+  output$time_verify <- shiny::renderUI({ shiny::req(rv$cr, !inherits(rv$cr, "error")); time_note("verify", rv$cr$mode) })
   shiny::observeEvent(input$question, shiny::updateCheckboxInput(session, "both_modes", value = input$question == "unsure"))
   shiny::observeEvent(input$correct, {
     shiny::req(rv$grouping)
