@@ -549,7 +549,8 @@ run_app <- function(launch.browser = interactive()) {
 .time_words <- function(minutes) {
   if (minutes[["high"]] < 1) return("under a minute")
   round2 <- function(x) as.numeric(formatC(x, digits = 2, format = "g"))
-  if (minutes[["high"]] < 120) return(sprintf("about %g to %g minutes", max(1, round2(minutes[["low"]])), round2(minutes[["high"]])))
+  if (minutes[["low"]] < 1) return(sprintf("up to %g minutes", ceiling(round2(minutes[["high"]]))))
+  if (minutes[["high"]] < 120) return(sprintf("about %g to %g minutes", round2(minutes[["low"]]), round2(minutes[["high"]])))
   sprintf("about %g to %g hours", round2(minutes[["low"]] / 60), round2(minutes[["high"]] / 60))
 }
 
@@ -886,7 +887,7 @@ run_app <- function(launch.browser = interactive()) {
   output$modes_msg <- shiny::renderUI({ shiny::req(rv$other); modes_note() })
   output$modes_msg5 <- shiny::renderUI({ shiny::req(rv$v, rv$other); modes_note() })
   output$modes_table <- shiny::renderTable({
-    p <- disagreement(); shiny::req(nrow(p))
+    p <- disagreement(); shiny::req(nrow(p) > 0)
     names(p)[3:4] <- c(rv$cr$mode, rv$other$mode)
     p
   }, digits = 3)

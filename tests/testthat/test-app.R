@@ -230,6 +230,7 @@ test_that("the predicted time holds the times measured on real and simulated dat
   w <- depprep:::.time_words
   expect_identical(w(c(low = 0.1, high = 0.5)), "under a minute")
   expect_identical(w(c(low = 2, high = 13)), "about 2 to 13 minutes")
+  expect_identical(w(c(low = 0.2, high = 1.2)), "up to 2 minutes")
   expect_identical(w(c(low = 60, high = 300)), "about 1 to 5 hours")
   expect_match(depprep:::.time_message(20925, "spatiotemporal", "conditional_ar", 16), "reuses the bases")
   expect_match(depprep:::.time_message(20925, "spatiotemporal", "conditional_ar", 16, "verify"), "pair by pair")
