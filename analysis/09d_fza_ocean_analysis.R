@@ -74,7 +74,8 @@ params <- list(
 seed <- params$base_seed
 out_dir <- file.path("results", "fza")
 subset_sites <- as.integer(Sys.getenv("DEPPREP_OCEAN_SITES", "0"))
-prefix <- if (subset_sites > 0) "ocean_subset_" else "ocean_"
+region <- Sys.getenv("DEPPREP_OCEAN_REGION", "")           # "shelf" or "slope and deep": a design of protocol-v1.3.1, section 17.4
+prefix <- if (subset_sites > 0) "ocean_subset_" else if (nzchar(region)) paste0("ocean_", sub(" .*", "", region), "_") else "ocean_"
 out_file <- function(name) file.path(out_dir, paste0(prefix, name))
 Sys.setenv(RENV_CONFIG_SANDBOX_ENABLED = "FALSE")      # socket workers of correct(cores =)
 
@@ -89,6 +90,10 @@ topo <- read.csv(file.path("data", "raw", "fza", "etopo1_search_box.csv"), skip 
                  col.names = c("lat", "lon", "altitude"))
 depth <- tapply(topo$altitude, paste(floor(topo$lon / 0.25), floor(topo$lat / 0.25)), stats::median)
 cells$region <- ifelse(as.vector(depth[paste(floor(cells$lon / 0.25), floor(cells$lat / 0.25))]) > -200, "shelf", "slope and deep")
+if (nzchar(region)) {
+  cells <- cells[cells$region == region, ]
+  runs <- runs[runs$run %in% c("main", "conditional"), ]
+}
 if (subset_sites > 0) {
   d <- sqrt((cells$lon - mean(cells$lon))^2 + (cells$lat - mean(cells$lat))^2)
   cells <- cells[sort(order(d)[seq_len(subset_sites)]), ]
@@ -216,6 +221,7 @@ slim <- function(cr) {
 
 # --- Diagnosis and grouping per valid fraction ----------------------------------------
 t_start <- Sys.time()
+package_commit <- system("git rev-parse HEAD", intern = TRUE)   # at the start: commits made during the run do not count
 fractions <- unique(runs$min_fraction)
 data_of <- setNames(lapply(fractions, ocean_data), fractions)
 groupings <- list(); signatures <- list()
@@ -385,7 +391,7 @@ run_table <- do.call(rbind, lapply(seq_len(nrow(runs)), function(i) {
 }))
 
 w <- function(d, name) if (!is.null(d) && NROW(d)) utils::write.csv(d, out_file(name), row.names = FALSE)
-w(data.frame(seed = seed, perm_seed_contiguity = seed + 1L, package_commit = system("git rev-parse HEAD", intern = TRUE),
+w(data.frame(seed = seed, perm_seed_contiguity = seed + 1L, package_commit = package_commit,
              date = format(Sys.time(), "%Y-%m-%d %H:%M"), cores = params$cores, sites = nrow(cells), months = length(months),
              minutes = round(as.numeric(difftime(Sys.time(), t_start, units = "mins")), 1)), "session.csv")
 w(groups_table, "groups.csv"); w(run_table, "runs.csv")

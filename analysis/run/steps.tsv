@@ -36,3 +36,6 @@ step	script	arguments	needs	access	expected_time	note
 09b	09b_fza_gap_census.R	-	01a 01b 09a	-	minutes	census of the gaps (D26)
 09c	09c_missing_check.R	-	-	-	1-2 h	descriptive check of the correction with missing values (D26)
 09d	09d_fza_ocean_analysis.R	-	09a	-	2-3 h	ocean case, protocol-v1.3 section 16
+09e	09e_whitening_decomposition.R	-	09d	-	minutes	where the pairs live and which step of the whitening removes them, protocol-v1.3.1 section 17.2
+09f	09f_r_mode_simulation.R	-	-	-	about 1 h	simulation for the default of R (D29), protocol-v1.3.1 section 17.3
+09g	09g_fza_design_effect.R	-	09d	-	2-3 h	the Foz by shelf and slope (D31), protocol-v1.3.1 section 17.4
