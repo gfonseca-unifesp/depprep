@@ -422,7 +422,7 @@ Run from any folder; `RSCRIPT` sets the R to use. Each step writes its log to
 | | 08f | `08f_correct_time.R` | Time of the correction on one and on several processes | — | — | — |
 | **9. Real data: the Foz do Amazonas ocean** (in progress)<br>`R/partition.R` | 09a | `09a_fza_ocean_cube.R` | The ocean cube (cell x month) and the drivers; resumes from the files present | 01a | Earthdata, NOAA ERDDAP, ANA, NOAA PSL | hours (downloads), minutes (cached) |
 | | 09b | `09b_fza_gap_census.R` | Census of the gaps of the cube | 01a 01b 09a | — | minutes |
-| | 09c | `09c_missing_check.R` | What gaps cost the correction: 10% to 30% missing, at random and in cloud-like patches | — | — | 1-2 h |
+| | 09c | `09c_missing_check.R` | What gaps cost the correction: 10% to 30% missing, at random and in cloud-like patches | — | — | 2 h |
 | | 09d | `09d_fza_ocean_analysis.R` | The ocean case of protocol-v1.3: six runs and the output methods, raw against corrected (resumable) | 09a | — | 2-3 h |
 | | 09e | `09e_whitening_decomposition.R` | Where the associations of the ocean case live, and which step of the whitening removes them | 09d | — | 1 min |
 | | 09f | `09f_r_mode_simulation.R` | Which mode best estimates R in space-time when the association is autocorrelated and sensors have their own noise (resumable) | — | — | 2.5 h |

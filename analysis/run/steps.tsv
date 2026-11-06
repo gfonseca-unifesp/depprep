@@ -34,7 +34,7 @@ step	script	arguments	needs	access	expected_time	note
 08f	08f_correct_time.R	-	-	-	not recorded	time of the correction (D25)
 09a	09a_fza_ocean_cube.R	-	01a	network: Earthdata login, NOAA ERDDAP, ANA, NOAA PSL	hours (downloads), minutes (cached)	ocean cube and drivers; resumes from the files present
 09b	09b_fza_gap_census.R	-	01a 01b 09a	-	minutes	census of the gaps (D26)
-09c	09c_missing_check.R	-	-	-	1-2 h	descriptive check of the correction with missing values (D26)
+09c	09c_missing_check.R	-	-	-	about 2 h	descriptive check of the correction with missing values (D26)
 09d	09d_fza_ocean_analysis.R	-	09a	-	2-3 h	ocean case, protocol-v1.3 section 16, with the default of D29
 09e	09e_whitening_decomposition.R	-	09d	-	minutes	where the pairs live and which step of the whitening removes them, protocol-v1.3.1 section 17.2
 09f	09f_r_mode_simulation.R	-	-	-	about 2.5 h	simulation for the default of R (D29), protocol-v1.3.1 section 17.3
