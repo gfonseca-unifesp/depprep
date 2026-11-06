@@ -170,16 +170,6 @@ test_that("the R code of the app parses and reproduces the correction", {
   expect_equal(dim(env$cr$X), c(200, 10))
 })
 
-test_that("the question of step 2 gives the mode of each family", {
-  expect_setequal(unname(depprep:::.question_choices), c("association", "innovations", "unsure"))
-  for (q in c("association", "unsure")) {
-    expect_identical(depprep:::.question_mode(q, "spatial"), "conditional")
-    expect_identical(depprep:::.question_mode(q, "temporal"), "conditional")
-    expect_identical(depprep:::.question_mode(q, "spatiotemporal"), "conditional_ar")
-  }
-  for (fam in c("spatial", "temporal", "spatiotemporal")) expect_identical(depprep:::.question_mode("innovations", fam), "whiten")
-})
-
 test_that("the two modes of the app are compared pair by pair", {
   R1 <- diag(3); dimnames(R1) <- list(c("a", "b", "c"), c("a", "b", "c"))
   R2 <- R1
@@ -187,14 +177,19 @@ test_that("the two modes of the app are compared pair by pair", {
   R1["a", "c"] <- R1["c", "a"] <- -0.5; R2["a", "c"] <- R2["c", "a"] <- 0.1
   R1["b", "c"] <- R1["c", "b"] <- 0.3; R2["b", "c"] <- R2["c", "b"] <- 0.5
   p <- depprep:::.mode_disagreement(R1, R2)
+  expect_identical(nrow(p), 2L)
   expect_identical(p$a, c("a", "b"))
   expect_identical(p$b, c("c", "c"))
   expect_equal(p$difference, c(0.6, 0.2))
   expect_identical(attr(p, "n_pairs"), 3L)
+  expect_match(depprep:::.modes_text(p, "conditional_ar", "whiten"), "disagree on 2 of 3 pairs")
+  expect_match(depprep:::.modes_text(p[0, ], "conditional_ar", "whiten"), "agree: no pair")
   expect_identical(nrow(depprep:::.mode_disagreement(R1, R1)), 0L)
   expect_identical(depprep:::.other_mode("whiten", "spatiotemporal"), "conditional_ar")
   expect_identical(depprep:::.other_mode("conditional_ar", "spatiotemporal"), "whiten")
   expect_identical(depprep:::.other_mode("whiten", "temporal"), "conditional")
+  expect_identical(depprep:::.default_mode("spatial"), "conditional")
+  expect_identical(depprep:::.default_mode("spatiotemporal"), "conditional_ar")
   expect_identical(depprep:::.default_scope("conditional", "spatial"), "global")
   expect_identical(depprep:::.default_scope("conditional", "spatial", list(g1 = 1)), "groups")
   expect_identical(depprep:::.default_scope("whiten", "spatial"), "groups")
@@ -244,14 +239,12 @@ test_that("the app server loads the example and builds the data", {
     session$setInputs(example = 1, family = "spatial")
     expect_equal(nrow(rv$df), 200)
     session$setInputs(x = "x", y = "y", variables = setdiff(names(rv$df), c("x", "y")), technique = "x", regions = "yes",
-                      question = "association", mode = "default", scope = "default")
+                      mode = "default", scope = "default")
     expect_equal(ncol(dat()$X), 10)
     expect_equal(settings()$scope, "global")
     expect_equal(settings()$mode, "conditional")
-    session$setInputs(question = "innovations")
+    session$setInputs(mode = "whiten")                # step 4 can still choose another mode
     expect_equal(settings()$mode, "whiten")
-    session$setInputs(mode = "conditional")           # step 4 can still overrule the answer
-    expect_equal(settings()$mode, "conditional")
   })
   expect_s3_class(depprep:::.app_ui(), "shiny.tag.list")
 })

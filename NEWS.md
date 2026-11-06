@@ -9,6 +9,8 @@
 * `diagnose_variables()` warns when `nsim` is too low for space-time data, where the
   spatial p-value is the smallest of 6 time slices times 6: below 120 permutations no
   variable can show spatial dependence.
+* `run_app()` compares two modes of `R` by default in step 4, lists the pairs that differ by
+  0.2 or more, and shows the expected time in steps 4 and 5.
 
 ## Simulation (stage 9, protocol-v1.3.1)
 

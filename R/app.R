@@ -498,26 +498,15 @@ run_app <- function(launch.browser = interactive()) {
   data.frame(x = s$coords[, 1], y = s$coords[, 2], s$X)
 }
 
-# The question of step 2 (decision D30): the data set the design, the user says what is
-# being estimated, and that gives the mode.
-.question_choices <- c(
-  "Do the variables go together once the large-scale structure is set aside? (association of the residuals)" = "association",
-  "Do only their changes go together, from one site or time step to the next? (innovations)" = "innovations",
-  "Not sure: run both in step 4 and show where they disagree" = "unsure")
-.question_help <- paste(
-  "Example: chlorophyll and salinity, monthly, on a grid. The first question asks whether low salinity comes with high chlorophyll beyond",
-  "the map and the seasonal cycle they share, so slow associations count. The second asks whether a month-to-month change in salinity",
-  "comes with a change in chlorophyll, so slow associations fade. Both are legitimate, and they can differ.")
-.question_mode <- function(question, family) {
-  if (question == "innovations") "whiten" else if (family == "spatiotemporal") "conditional_ar" else "conditional"
-}
+.default_mode <- function(family) if (family == "spatiotemporal") "conditional_ar" else "conditional"
 
 .default_scope <- function(mode, family, menus = NULL) {
   if (mode != "whiten" && family != "spatiotemporal" && !length(menus)) "global" else "groups"
 }
 
-# The other answer to the question of step 2: whitening against the default of the family.
-.other_mode <- function(mode, family) if (mode == "whiten") .question_mode("association", family) else "whiten"
+# The mode that R is compared with (decision D30): what is being estimated cannot be answered
+# before the analysis, so both run and the user reads where they differ.
+.other_mode <- function(mode, family) if (mode == "whiten") .default_mode(family) else "whiten"
 
 # R by the other mode. Only R is used, since X does not depend on the mode (D17), and the
 # bases already built are reused when both modes share the scope.
@@ -534,7 +523,10 @@ run_app <- function(launch.browser = interactive()) {
   d <- data.frame(a = rownames(R1)[low[, 2]], b = rownames(R1)[low[, 1]], first = R1[low], second = R2[low], stringsAsFactors = FALSE)
   d$difference <- d$second - d$first
   d <- d[abs(d$difference) >= threshold, ]
-  structure(d[order(-abs(d$difference)), ], row.names = NULL, n_pairs = nrow(low))
+  d <- d[order(-abs(d$difference)), ]
+  rownames(d) <- NULL
+  attr(d, "n_pairs") <- nrow(low)
+  d
 }
 
 # Predicted minutes of correct() in space-time (decision D30). The time grows with the square
@@ -569,6 +561,13 @@ run_app <- function(launch.browser = interactive()) {
   sprintf("Expected time: %s, because the projected part is computed pair by pair.", .time_words(m * 0.4))
 }
 
+# What steps 4 and 5 say about the comparison of the two modes.
+.modes_text <- function(p, mode, other) {
+  if (!nrow(p)) return(sprintf("Modes %s and %s agree: no pair differs by 0.2 or more, so the correlations do not depend on the mode.", mode, other))
+  sprintf("Modes %s and %s disagree on %d of %d pairs (difference of 0.2 or more, in the table of step 4). The conditional modes keep associations that change slowly over sites and time; whitening keeps only how changes go together from one site or time step to the next. For these pairs the answer depends on that, so report both values.",
+          mode, other, nrow(p), attr(p, "n_pairs"))
+}
+
 # --- User interface -------------------------------------------------------------------
 
 .app_ui <- function() {
@@ -587,8 +586,6 @@ run_app <- function(launch.browser = interactive()) {
         shiny::uiOutput("data_msg"),
         shiny::tableOutput("head")),
       shiny::tabPanel("2. Context",
-        shiny::radioButtons("question", "What do you want to estimate?", .question_choices),
-        shiny::p(class = "help", .question_help),
         shiny::radioButtons("technique", "The corrected data are for",
           c("PCA (reads the corrected correlation matrix R)" = "pca", "MDS" = "mds", "k-means" = "kmeans", "SOM" = "som",
             "HDBSCAN" = "hdbscan")),
@@ -614,13 +611,13 @@ run_app <- function(launch.browser = interactive()) {
         shiny::verbatimTextOutput("menus")),
       shiny::tabPanel("4. Correction",
         shiny::uiOutput("correct_help"),
-        shiny::selectInput("mode", "Mode", c("As answered in step 2" = "default", "Conditional (residuals on the bases)" = "conditional",
+        shiny::selectInput("mode", "Mode", c("Default for the data" = "default", "Conditional (residuals on the bases)" = "conditional",
                                          "Conditional + AR, space-time (residuals filtered in time)" = "conditional_ar",
                                          "Whitening (innovations)" = "whiten")),
         shiny::selectInput("scope", "Bases for R", c("Default for the data" = "default", "One per group" = "groups", "One global basis" = "global",
                                                   "Union of the variables' bases" = "variables")),
         shiny::uiOutput("cores_ui"),
-        shiny::checkboxInput("both_modes", "Also run the other answer to the question of step 2 and show where the two disagree"),
+        shiny::checkboxInput("both_modes", "Compare with the other mode and show where the two disagree", value = TRUE),
         shiny::uiOutput("time_correct"),
         shiny::actionButton("correct", "Correct"),
         shiny::tableOutput("bases"),
@@ -708,7 +705,7 @@ run_app <- function(launch.browser = interactive()) {
   })
   output$head <- shiny::renderTable(utils::head(rv$df, 6))
   output$context_msg <- shiny::renderUI({
-    out <- list(shiny::p(sprintf("Step 4 estimates R with the mode %s by default.", .question_mode(input$question, input$family))),
+    out <- list(shiny::p(sprintf("Step 4 estimates R with the mode %s and compares it with %s.", .default_mode(input$family), .other_mode(.default_mode(input$family), input$family))),
       shiny::p(class = "help", "The design is yours: the correction removes what is large scale for the grid and the period you loaded. Another extent can change what counts as large scale, and with it the result."),
       shiny::p(if (input$technique == "pca") "PCA reads the corrected correlation matrix R, built with the shared basis of each group." else
       "These techniques read the corrected data matrix X, in which each variable is corrected with its own basis: it keeps the classes best."))
@@ -840,7 +837,7 @@ run_app <- function(launch.browser = interactive()) {
   })
   settings <- shiny::reactive({
     d <- dat()
-    mode <- if (input$mode == "default") .question_mode(input$question, d$family) else input$mode
+    mode <- if (input$mode == "default") .default_mode(d$family) else input$mode
     scope <- if (input$scope == "default") .default_scope(mode, d$family, rv$menus) else input$scope
     list(mode = mode, scope = scope)
   })
@@ -859,7 +856,6 @@ run_app <- function(launch.browser = interactive()) {
   }
   output$time_correct <- shiny::renderUI(time_note("correct", settings()$mode))
   output$time_verify <- shiny::renderUI({ shiny::req(rv$cr, !inherits(rv$cr, "error")); time_note("verify", rv$cr$mode) })
-  shiny::observeEvent(input$question, shiny::updateCheckboxInput(session, "both_modes", value = input$question == "unsure"))
   shiny::observeEvent(input$correct, {
     shiny::req(rv$grouping)
     d <- dat(); st <- settings()
@@ -880,9 +876,7 @@ run_app <- function(launch.browser = interactive()) {
   modes_note <- function() {
     if (inherits(rv$other, "error")) return(shiny::div(class = "note", paste("The other mode failed:", conditionMessage(rv$other))))
     p <- disagreement()
-    if (!nrow(p)) return(shiny::div(class = "ok", sprintf("Modes %s and %s agree: no pair differs by 0.2 or more.", rv$cr$mode, rv$other$mode)))
-    shiny::div(class = "note", sprintf("Modes %s and %s disagree on %d of %d pairs (difference of 0.2 or more). Those pairs depend on the question of step 2: report the mode you used and do not read them as settled.",
-                                       rv$cr$mode, rv$other$mode, nrow(p), attr(p, "n_pairs")))
+    shiny::div(class = if (nrow(p)) "note" else "ok", .modes_text(p, rv$cr$mode, rv$other$mode))
   }
   output$modes_msg <- shiny::renderUI({ shiny::req(rv$other); modes_note() })
   output$modes_msg5 <- shiny::renderUI({ shiny::req(rv$v, rv$other); modes_note() })
